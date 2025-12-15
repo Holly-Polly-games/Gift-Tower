@@ -328,15 +328,20 @@
   let bonusImg = null;
   let coilImg = null;
 
-  /* ======== BAG (static) ======== */
-  let bagFrontImg = null; // bag1 (перед)
-  let bagBackImg  = null; // bag2 (зад)
+  /* ======== BAG (static) ========
+     ✅ ВАЖНО: теперь мешок масштабируется относительно размера поля
+     Регулировки:
+     - BAG_W_RATIO / BAG_H_RATIO: размер мешка в долях поля
+     - BAG_OFFSET_X: смещение по X (в мировых единицах)
+     - BAG_OFFSET_Y: смещение по Y (в "дизайн пикселях", потом масштабируется)
+  */
+  let bagFrontImg = null;
+  let bagBackImg  = null;
 
-  // Регулировки мешка:
-  const BAG_W = 314;
-  const BAG_H = 156;
+  const BAG_W_RATIO = 0.52; // 52% ширины поля
+  const BAG_H_RATIO = 0.26; // 26% высоты поля
   const BAG_OFFSET_X = 0;
-  const BAG_OFFSET_Y = 40;
+  const BAG_OFFSET_Y = 40;  // "дизайн" отступ (будет масштабирован)
 
   const SKY_STAGE1 = 3750;
   const SKY_STAGE2 = 7650;
@@ -355,7 +360,6 @@
 
   const IS_MOBILE = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
-  /* ✅ анти-мерцание: дебаунс resize + игнор микросдвигов */
   let lastCssW = 0, lastCssH = 0;
   let resizeTimer = 0;
 
@@ -381,7 +385,7 @@
     }
 
     if (Math.abs(cssW - lastCssW) < 2 && Math.abs(cssH - lastCssH) < 2){
-      return; // игнор микроресайзы (они и дают “мигание” на мобиле)
+      return;
     }
     lastCssW = cssW; lastCssH = cssH;
 
@@ -709,7 +713,6 @@
     return { typeId:type.id, x, y, w:type.w, h:type.h, img: randomFloorImage(type.id), color:'#66bb6a', isBonus:false, isAntiBonus:false };
   }
 
-  /* ✅ decode(), чтобы webview не “подмигивал” при первой отрисовке */
   function loadWithFallback(baseName, exts){
     return new Promise((resolve)=>{
       let idx = 0;
@@ -718,9 +721,7 @@
         const src = baseName + exts[idx++];
         const img = new Image();
         img.onload = async ()=>{
-          try{
-            if (img.decode) await img.decode();
-          }catch(e){}
+          try{ if (img.decode) await img.decode(); }catch(e){}
           resolve(img);
         };
         img.onerror = ()=>tryNext();
@@ -777,10 +778,18 @@
     }
   }
 
+  /* ✅ МЕШОК: теперь размеры относительные, одинаково по пропорциям на мобиле и ПК */
   function getBagWorldRect(){
-    const x = (canvasW - BAG_W) / 2 + BAG_OFFSET_X;
-    const y = FLOOR_Y - BAG_H + BAG_OFFSET_Y;
-    return { x, y, w: BAG_W, h: BAG_H };
+    const w = canvasW * BAG_W_RATIO;
+    const h = canvasH * BAG_H_RATIO;
+
+    const x = (canvasW - w) / 2 + BAG_OFFSET_X;
+
+    // масштабируем отступ, чтобы на всех экранах выглядел одинаково
+    const offsetYScaled = (BAG_OFFSET_Y / 600) * canvasH;
+    const y = FLOOR_Y - h + offsetYScaled;
+
+    return { x, y, w, h };
   }
 
   function drawBagBack(){
@@ -840,7 +849,9 @@
 
   function spawnBlock(){
     const last = tower[tower.length - 1];
-    const GAP_ABOVE = BLOCK_HEIGHT * 14;
+
+    // ✅ ВЫСОТА СПАВНА: ограничиваем, чтобы на телефоне блок не улетал за пределы окна
+    const GAP_ABOVE = Math.min(BLOCK_HEIGHT * 14, canvasH * 0.55);
 
     let block;
 
@@ -1183,11 +1194,9 @@
     }
   });
 
-  /* ✅ ТАП только на canvas + startOverlay (убрал container, чтобы не ломал кнопки) */
   canvas.addEventListener('pointerdown', (e)=>{ e.preventDefault(); onTap(); }, { passive:false });
   startOverlay.addEventListener('pointerdown', (e)=>{ e.preventDefault(); onTap(); }, { passive:false });
 
-  /* ✅ КНОПКИ: стопим всплытие, чтобы никакой “тап” их не перебивал */
   btnRestart.addEventListener('pointerdown', (e)=>{ e.stopPropagation(); }, { passive:true });
   btnLeaderboard.addEventListener('pointerdown', (e)=>{ e.stopPropagation(); }, { passive:true });
   gameOverOverlay.addEventListener('pointerdown', (e)=>{ e.stopPropagation(); }, { passive:true });
@@ -1234,4 +1243,3 @@
 </script>
 </body>
 </html>
-
