@@ -72,6 +72,7 @@
       -webkit-user-select:none;
       user-select:none;
       image-rendering:optimizeQuality;
+      touch-action:none;
     }
 
     .overlay-start{
@@ -173,6 +174,7 @@
       cursor:pointer;
       box-shadow:0 6px 12px rgba(0,0,0,0.18);
       min-width:120px;
+      touch-action:manipulation;
     }
     .go-btn.secondary{
       background:#ffffff;
@@ -185,17 +187,18 @@
       .overlay-start .rules{ font-size:13px; }
     }
 
+    /* ✅ АДАПТИВНЫЕ ГИРЛЯНДЫ (на мобиле не лезут в центр) */
     .garland-strip{
       position:fixed;
       top:0;
       bottom:0;
-      width:500px;
+      width:min(22vw, 150px);
       pointer-events:none;
       z-index:1;
       background-image:url('girlanda.webp');
       background-repeat:repeat-y;
       background-position:center top;
-      background-size:contain;
+      background-size:100% auto;
     }
     .garland-strip.left{ left:0; }
     .garland-strip.right{ right:0; transform:scaleX(-1); }
@@ -301,7 +304,6 @@
   const BLOCK_HEIGHT = 30;
 
   const PERFECT_TOLERANCE = 8;
-
   const ANTI_BONUS_CHANCE = 0.10;
 
   const BONUS_W = 150;
@@ -331,10 +333,10 @@
   let bagBackImg  = null; // bag2 (зад)
 
   // Регулировки мешка:
-  const BAG_W = 314;      // ширина
-  const BAG_H = 156;      // высота
-  const BAG_OFFSET_X = 0; // смещение по X
-  const BAG_OFFSET_Y = 40;// смещение по Y относительно FLOOR_Y
+  const BAG_W = 314;
+  const BAG_H = 156;
+  const BAG_OFFSET_X = 0;
+  const BAG_OFFSET_Y = 40;
 
   const SKY_STAGE1 = 3750;
   const SKY_STAGE2 = 7650;
@@ -353,7 +355,11 @@
 
   const IS_MOBILE = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
-  function resizeCanvas(){
+  /* ✅ анти-мерцание: дебаунс resize + игнор микросдвигов */
+  let lastCssW = 0, lastCssH = 0;
+  let resizeTimer = 0;
+
+  function doResizeCanvas(){
     const vw = window.innerWidth;
     const vh = Math.min(
       window.visualViewport?.height || window.innerHeight,
@@ -373,6 +379,11 @@
       cssW = 260;
       cssH = Math.floor(cssW * aspect);
     }
+
+    if (Math.abs(cssW - lastCssW) < 2 && Math.abs(cssH - lastCssH) < 2){
+      return; // игнор микроресайзы (они и дают “мигание” на мобиле)
+    }
+    lastCssW = cssW; lastCssH = cssH;
 
     canvas.style.width = cssW + 'px';
     canvas.style.height = cssH + 'px';
@@ -399,11 +410,17 @@
     if (stars.length) initStars();
   }
 
-  window.addEventListener('resize', ()=>{ resizeCanvas(); });
-  window.addEventListener('orientationchange', ()=>{ setTimeout(resizeCanvas, 120); });
+  function scheduleResize(){
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(doResizeCanvas, IS_MOBILE ? 120 : 0);
+  }
+
+  window.addEventListener('resize', scheduleResize);
+  window.addEventListener('orientationchange', ()=>{ setTimeout(scheduleResize, 120); });
+
   window.addEventListener('touchmove', e => { e.preventDefault(); }, { passive:false });
 
-  const FALL_SPEED = 9;            // <- ускорение падения (выше = быстрее)
+  const FALL_SPEED = 9;
   const MOVE_SPEED_START = 2.5;
 
   const BASE_SPEED_GROWTH = 0.20;
@@ -692,15 +709,20 @@
     return { typeId:type.id, x, y, w:type.w, h:type.h, img: randomFloorImage(type.id), color:'#66bb6a', isBonus:false, isAntiBonus:false };
   }
 
+  /* ✅ decode(), чтобы webview не “подмигивал” при первой отрисовке */
   function loadWithFallback(baseName, exts){
     return new Promise((resolve)=>{
       let idx = 0;
-      let img = new Image();
       function tryNext(){
         if (idx >= exts.length){ resolve(null); return; }
         const src = baseName + exts[idx++];
-        img = new Image();
-        img.onload = ()=>resolve(img);
+        const img = new Image();
+        img.onload = async ()=>{
+          try{
+            if (img.decode) await img.decode();
+          }catch(e){}
+          resolve(img);
+        };
         img.onerror = ()=>tryNext();
         img.src = src;
       }
@@ -913,14 +935,10 @@
 
     const lastLeft = last.x;
     const lastRight = last.x + last.w;
-    const curLeft = current.x;
-    const curRight = current.x + current.w;
-    const overlap = Math.min(lastRight, curRight) - Math.max(lastLeft, curLeft);
-
     const curCenter = current.x + current.w / 2;
     const lastCenter = (lastLeft + lastRight) / 2;
 
-    const hit = overlap > 0 && curCenter >= lastLeft && curCenter <= lastRight;
+    const hit = curCenter >= lastLeft && curCenter <= lastRight;
 
     if (current.isAntiBonus){
       if (!hit){
@@ -1072,12 +1090,11 @@
     gameOverOverlay.style.display = 'none';
   }
 
-  let rafId = 0;
   let isPaused = false;
 
   function update(){
     if (isPaused){
-      rafId = requestAnimationFrame(update);
+      requestAnimationFrame(update);
       return;
     }
 
@@ -1131,7 +1148,7 @@
       }
     }
 
-    rafId = requestAnimationFrame(update);
+    requestAnimationFrame(update);
   }
 
   function handleDrop(){
@@ -1166,19 +1183,25 @@
     }
   });
 
-  // ✅ ВАЖНО: теперь тап по оверлею тоже запускает игру
-  canvas.addEventListener('pointerdown', onTap, { passive:true });
-  startOverlay.addEventListener('pointerdown', onTap, { passive:true });
-  container.addEventListener('pointerdown', onTap, { passive:true });
+  /* ✅ ТАП только на canvas + startOverlay (убрал container, чтобы не ломал кнопки) */
+  canvas.addEventListener('pointerdown', (e)=>{ e.preventDefault(); onTap(); }, { passive:false });
+  startOverlay.addEventListener('pointerdown', (e)=>{ e.preventDefault(); onTap(); }, { passive:false });
 
-  btnRestart.addEventListener('click', ()=>{
+  /* ✅ КНОПКИ: стопим всплытие, чтобы никакой “тап” их не перебивал */
+  btnRestart.addEventListener('pointerdown', (e)=>{ e.stopPropagation(); }, { passive:true });
+  btnLeaderboard.addEventListener('pointerdown', (e)=>{ e.stopPropagation(); }, { passive:true });
+  gameOverOverlay.addEventListener('pointerdown', (e)=>{ e.stopPropagation(); }, { passive:true });
+
+  btnRestart.addEventListener('click', (e)=>{
+    e.stopPropagation();
     resetGame();
     gameOver = false;
     hideGameOverMenu();
     handleStart();
   });
 
-  btnLeaderboard.addEventListener('click', ()=>{
+  btnLeaderboard.addEventListener('click', (e)=>{
+    e.stopPropagation();
     console.log('Открыть таблицу лидеров (TODO)');
   });
 
@@ -1196,8 +1219,8 @@
   });
 
   async function boot(){
-    resizeCanvas();
-    rafId = requestAnimationFrame(update);
+    doResizeCanvas();
+    requestAnimationFrame(update);
 
     await loadAllAssetsWithProgress();
 
@@ -1211,3 +1234,4 @@
 </script>
 </body>
 </html>
+
