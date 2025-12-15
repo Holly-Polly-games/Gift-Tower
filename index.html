@@ -192,7 +192,7 @@
       width:500px;
       pointer-events:none;
       z-index:1;
-      background-image:url('girlanda.webp'); /* ✅ было girlanda.png */
+      background-image:url('girlanda.webp');
       background-repeat:repeat-y;
       background-position:center top;
       background-size:contain;
@@ -310,7 +310,6 @@
   const COIL_W = 128;
   const COIL_H = 120;
 
-  // ✅ ИМЕНА ПОД ТВОИ ФАЙЛЫ: Tip-A-1.webp ... Tip-F-3.webp
   const FLOOR_TYPES = [
     { id: 'A', label: 'Tip A', filePrefix: 'Tip-A-', variants: 2, w: 155, h: 121 },
     { id: 'B', label: 'Tip B', filePrefix: 'Tip-B-', variants: 3, w: 190, h: 149 },
@@ -332,10 +331,10 @@
   let bagBackImg  = null; // bag2 (зад)
 
   // Регулировки мешка:
-  const BAG_W = 314;     // размер (ширина)
-  const BAG_H = 156;     // размер (высота)
+  const BAG_W = 314;      // ширина
+  const BAG_H = 156;      // высота
   const BAG_OFFSET_X = 0; // смещение по X
-  const BAG_OFFSET_Y = 40; // смещение по Y относительно FLOOR_Y
+  const BAG_OFFSET_Y = 40;// смещение по Y относительно FLOOR_Y
 
   const SKY_STAGE1 = 3750;
   const SKY_STAGE2 = 7650;
@@ -404,7 +403,7 @@
   window.addEventListener('orientationchange', ()=>{ setTimeout(resizeCanvas, 120); });
   window.addEventListener('touchmove', e => { e.preventDefault(); }, { passive:false });
 
-  const FALL_SPEED = 9;
+  const FALL_SPEED = 9;            // <- ускорение падения (выше = быстрее)
   const MOVE_SPEED_START = 2.5;
 
   const BASE_SPEED_GROWTH = 0.20;
@@ -715,10 +714,10 @@
   }
 
   async function loadAllAssetsWithProgress(){
-    const EXT_ORDER = ['.webp', '.png', '.jpg', '.jpeg']; // ✅ webp первым
+    const EXT_ORDER = ['.webp', '.png', '.jpg', '.jpeg'];
 
     const totalFloorVariants = FLOOR_TYPES.reduce((s,t)=>s + t.variants, 0);
-    const totalAssets = totalFloorVariants + 5; // background + bonus + coil + bag1 + bag2
+    const totalAssets = totalFloorVariants + 5;
     let loadedAssets = 0;
     function oneDone(){ loadedAssets++; updateLoaderProgress(loadedAssets, totalAssets); }
 
@@ -732,10 +731,7 @@
 
     { const img = await loadWithFallback('background', EXT_ORDER); if (img) backgroundImg = img; oneDone(); }
     { const img = await loadWithFallback('bonus', EXT_ORDER); if (img) bonusImg = img; oneDone(); }
-
-    // ✅ у тебя файл coil.webp (нижний регистр)
     { const img = await loadWithFallback('coil', EXT_ORDER); if (img) coilImg = img; oneDone(); }
-
     { const img = await loadWithFallback('bag2', EXT_ORDER); if (img) bagBackImg = img; oneDone(); }
     { const img = await loadWithFallback('bag1', EXT_ORDER); if (img) bagFrontImg = img; oneDone(); }
   }
@@ -1151,22 +1147,7 @@
     hideGameOverMenu();
   }
 
-  window.addEventListener('keydown', (e)=>{
-    if (e.code === 'Space' || e.code === 'ArrowDown'){
-      e.preventDefault();
-      if (!gameStarted) handleStart();
-      if (gameOver){
-        resetGame();
-        gameOver = false;
-        hideGameOverMenu();
-        handleStart();
-      } else {
-        handleDrop();
-      }
-    }
-  });
-
-  canvas.addEventListener('pointerdown', ()=>{
+  function onTap(){
     if (!gameStarted) handleStart();
     if (gameOver){
       resetGame();
@@ -1176,7 +1157,19 @@
     } else {
       handleDrop();
     }
-  }, { passive:true });
+  }
+
+  window.addEventListener('keydown', (e)=>{
+    if (e.code === 'Space' || e.code === 'ArrowDown'){
+      e.preventDefault();
+      onTap();
+    }
+  });
+
+  // ✅ ВАЖНО: теперь тап по оверлею тоже запускает игру
+  canvas.addEventListener('pointerdown', onTap, { passive:true });
+  startOverlay.addEventListener('pointerdown', onTap, { passive:true });
+  container.addEventListener('pointerdown', onTap, { passive:true });
 
   btnRestart.addEventListener('click', ()=>{
     resetGame();
