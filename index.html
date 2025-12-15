@@ -36,23 +36,26 @@
       position:relative;
     }
 
+    /* ✅ header уменьшен ~на 20% по высоте */
     header{
       text-align:center;
-      margin-bottom:8px;
+      margin-bottom:6px; /* было 8px */
       width:100%;
       user-select:none;
       position:relative;
       z-index:2;
     }
     header img{
-      max-height:84px;
+      max-height:67px; /* было 84px */
       display:block;
       margin:0 auto;
     }
     header .slogan{
       color:#000;
-      margin-top:8px;
+      margin-top:6px; /* было 8px */
       font-weight:700;
+      font-size:0.92em; /* легкое уменьшение */
+      line-height:1.1;
     }
 
     #container{
@@ -187,7 +190,6 @@
       .overlay-start .rules{ font-size:13px; }
     }
 
-    /* ✅ АДАПТИВНЫЕ ГИРЛЯНДЫ (на мобиле не лезут в центр) */
     .garland-strip{
       position:fixed;
       top:0;
@@ -300,7 +302,8 @@
   let DPR = 1;
   let canvasW = 0, canvasH = 0;
 
-  const CAMERA_SCALE = 0.95;
+  /* ✅ масштаб камеры “отдалён” на 20% */
+  const CAMERA_SCALE = 0.76; /* было 0.95 */
   const BLOCK_HEIGHT = 30;
 
   const PERFECT_TOLERANCE = 8;
@@ -328,20 +331,13 @@
   let bonusImg = null;
   let coilImg = null;
 
-  /* ======== BAG (static) ========
-     ✅ ВАЖНО: теперь мешок масштабируется относительно размера поля
-     Регулировки:
-     - BAG_W_RATIO / BAG_H_RATIO: размер мешка в долях поля
-     - BAG_OFFSET_X: смещение по X (в мировых единицах)
-     - BAG_OFFSET_Y: смещение по Y (в "дизайн пикселях", потом масштабируется)
-  */
   let bagFrontImg = null;
   let bagBackImg  = null;
 
-  const BAG_W_RATIO = 0.52; // 52% ширины поля
-  const BAG_H_RATIO = 0.26; // 26% высоты поля
+  const BAG_W_RATIO = 0.52;
+  const BAG_H_RATIO = 0.26;
   const BAG_OFFSET_X = 0;
-  const BAG_OFFSET_Y = 40;  // "дизайн" отступ (будет масштабирован)
+  const BAG_OFFSET_Y = 40;
 
   const SKY_STAGE1 = 3750;
   const SKY_STAGE2 = 7650;
@@ -520,7 +516,6 @@
     };
   }
 
-  /* ======== SNOW ======== */
   function makeFlake(randomY){
     return {
       x: Math.random() * canvasW,
@@ -567,7 +562,6 @@
     ctx.restore();
   }
 
-  /* ======== STARS ======== */
   function makeStar(randomY){
     return {
       x: Math.random() * canvasW,
@@ -602,7 +596,6 @@
     ctx.restore();
   }
 
-  /* ======== SPARKS ======== */
   function spawnSparks(worldX, worldY){
     const count = 24;
     for (let i = 0; i < count; i++){
@@ -643,7 +636,6 @@
     ctx.restore();
   }
 
-  /* ======== FALLING BLOCKS ======== */
   function spawnFallingBlocks(blocks){
     for (const b of blocks){
       fallingBlocks.push({
@@ -778,14 +770,12 @@
     }
   }
 
-  /* ✅ МЕШОК: теперь размеры относительные, одинаково по пропорциям на мобиле и ПК */
   function getBagWorldRect(){
     const w = canvasW * BAG_W_RATIO;
     const h = canvasH * BAG_H_RATIO;
 
     const x = (canvasW - w) / 2 + BAG_OFFSET_X;
 
-    // масштабируем отступ, чтобы на всех экранах выглядел одинаково
     const offsetYScaled = (BAG_OFFSET_Y / 600) * canvasH;
     const y = FLOOR_Y - h + offsetYScaled;
 
@@ -850,8 +840,8 @@
   function spawnBlock(){
     const last = tower[tower.length - 1];
 
-    // ✅ ВЫСОТА СПАВНА: ограничиваем, чтобы на телефоне блок не улетал за пределы окна
-    const GAP_ABOVE = Math.min(BLOCK_HEIGHT * 14, canvasH * 0.55);
+    /* ✅ высота появления блока: было 14, стало 12 (+ ограничение по высоте окна) */
+    const GAP_ABOVE = Math.min(BLOCK_HEIGHT * 12, canvasH * 0.55);
 
     let block;
 
