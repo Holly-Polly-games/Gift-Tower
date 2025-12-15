@@ -192,7 +192,7 @@
       width:500px;
       pointer-events:none;
       z-index:1;
-      background-image:url('girlanda.png');
+      background-image:url('girlanda.webp'); /* ✅ было girlanda.png */
       background-repeat:repeat-y;
       background-position:center top;
       background-size:contain;
@@ -283,7 +283,6 @@
 
 <script>
   const canvas = document.getElementById('game');
-  // ✅ оптимизация: desynchronized помогает на мобилках уменьшить лаги рендера
   const ctx = canvas.getContext('2d', { alpha:true, desynchronized:true });
 
   const container = document.getElementById('container');
@@ -311,12 +310,13 @@
   const COIL_W = 128;
   const COIL_H = 120;
 
+  // ✅ ИМЕНА ПОД ТВОИ ФАЙЛЫ: Tip-A-1.webp ... Tip-F-3.webp
   const FLOOR_TYPES = [
-    { id: 'A', label: 'Tip A', filePrefix: 'Tip A -', variants: 2, w: 155, h: 121 },
-    { id: 'B', label: 'Tip B', filePrefix: 'Tip B -', variants: 3, w: 190, h: 149 },
-    { id: 'C', label: 'Tip C', filePrefix: 'Tip C -', variants: 2, w: 116, h: 186 },
-    { id: 'D', label: 'Tip D', filePrefix: 'Tip D -', variants: 4, w: 100, h: 100 },
-    { id: 'F', label: 'Tip F', filePrefix: 'Tip F -', variants: 3, w: 119, h: 205 }
+    { id: 'A', label: 'Tip A', filePrefix: 'Tip-A-', variants: 2, w: 155, h: 121 },
+    { id: 'B', label: 'Tip B', filePrefix: 'Tip-B-', variants: 3, w: 190, h: 149 },
+    { id: 'C', label: 'Tip C', filePrefix: 'Tip-C-', variants: 2, w: 116, h: 186 },
+    { id: 'D', label: 'Tip D', filePrefix: 'Tip-D-', variants: 4, w: 100, h: 100 },
+    { id: 'F', label: 'Tip F', filePrefix: 'Tip-F-', variants: 3, w: 119, h: 205 }
   ];
 
   const FLOOR_IMAGES = {};
@@ -331,10 +331,11 @@
   let bagFrontImg = null; // bag1 (перед)
   let bagBackImg  = null; // bag2 (зад)
 
-  const BAG_W = 314;
-  const BAG_H = 156;
-  const BAG_OFFSET_X = 0;
-  const BAG_OFFSET_Y = 40;
+  // Регулировки мешка:
+  const BAG_W = 314;     // размер (ширина)
+  const BAG_H = 156;     // размер (высота)
+  const BAG_OFFSET_X = 0; // смещение по X
+  const BAG_OFFSET_Y = 40; // смещение по Y относительно FLOOR_Y
 
   const SKY_STAGE1 = 3750;
   const SKY_STAGE2 = 7650;
@@ -351,7 +352,6 @@
 
   let backgroundWorldBottom = 0;
 
-  // ✅ оптимизация: на мобилках ограничиваем DPR сильнее
   const IS_MOBILE = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
   function resizeCanvas(){
@@ -715,6 +715,8 @@
   }
 
   async function loadAllAssetsWithProgress(){
+    const EXT_ORDER = ['.webp', '.png', '.jpg', '.jpeg']; // ✅ webp первым
+
     const totalFloorVariants = FLOOR_TYPES.reduce((s,t)=>s + t.variants, 0);
     const totalAssets = totalFloorVariants + 5; // background + bonus + coil + bag1 + bag2
     let loadedAssets = 0;
@@ -722,18 +724,20 @@
 
     for (const t of FLOOR_TYPES){
       for (let i = 1; i <= t.variants; i++){
-        const img = await loadWithFallback(`${t.filePrefix}${i}`, ['.png','.webp','.jpg','.jpeg']);
+        const img = await loadWithFallback(`${t.filePrefix}${i}`, EXT_ORDER);
         if (img) FLOOR_IMAGES[t.id].push(img);
         oneDone();
       }
     }
 
-    { const img = await loadWithFallback('background', ['.png','.webp','.jpg','.jpeg']); if (img) backgroundImg = img; oneDone(); }
-    { const img = await loadWithFallback('bonus', ['.png','.webp','.jpg','.jpeg']); if (img) bonusImg = img; oneDone(); }
-    { const img = await loadWithFallback('Coil', ['.png','.webp','.jpg','.jpeg']); if (img) coilImg = img; oneDone(); }
+    { const img = await loadWithFallback('background', EXT_ORDER); if (img) backgroundImg = img; oneDone(); }
+    { const img = await loadWithFallback('bonus', EXT_ORDER); if (img) bonusImg = img; oneDone(); }
 
-    { const img = await loadWithFallback('bag2', ['.png','.webp','.jpg','.jpeg']); if (img) bagBackImg = img; oneDone(); }
-    { const img = await loadWithFallback('bag1', ['.png','.webp','.jpg','.jpeg']); if (img) bagFrontImg = img; oneDone(); }
+    // ✅ у тебя файл coil.webp (нижний регистр)
+    { const img = await loadWithFallback('coil', EXT_ORDER); if (img) coilImg = img; oneDone(); }
+
+    { const img = await loadWithFallback('bag2', EXT_ORDER); if (img) bagBackImg = img; oneDone(); }
+    { const img = await loadWithFallback('bag1', EXT_ORDER); if (img) bagFrontImg = img; oneDone(); }
   }
 
   function drawBackground(worldHeight){
@@ -818,7 +822,6 @@
 
   function spawnBlock(){
     const last = tower[tower.length - 1];
-
     const GAP_ABOVE = BLOCK_HEIGHT * 14;
 
     let block;
@@ -1073,7 +1076,6 @@
     gameOverOverlay.style.display = 'none';
   }
 
-  // ✅ оптимизация: пауза рендера, если вкладка/вебвью скрыта
   let rafId = 0;
   let isPaused = false;
 
@@ -1164,7 +1166,6 @@
     }
   });
 
-  // ✅ оптимизация: один обработчик вместо mousedown + touchstart
   canvas.addEventListener('pointerdown', ()=>{
     if (!gameStarted) handleStart();
     if (gameOver){
