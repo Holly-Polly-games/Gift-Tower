@@ -240,7 +240,7 @@
     </div>
   </div>
 
-  <div id="startOverlay" class="overlay-start">
+  <div id="startOverlay" class="overlay-start" style="display:none;">
     <div class="panel">
       <div class="msg">Тапни, чтобы начать строить башню</div>
 
@@ -287,10 +287,9 @@
      меньше число -> сильнее "отдаляем" (видно больше мира)
      больше число -> "приближаем" (объекты крупнее)
   */
-  const CAMERA_SCALE = 0.74;
+  const CAMERA_SCALE = 0.73;
 
   const BLOCK_HEIGHT = 30;
-
   const PERFECT_TOLERANCE = 8;
   const ANTI_BONUS_CHANCE = 0.10;
 
@@ -315,7 +314,6 @@
   let backgroundImg = null;
   let bonusImg = null;
   let coilImg = null;
-
   let bagFrontImg = null;
   let bagBackImg  = null;
 
@@ -402,7 +400,6 @@
 
   window.addEventListener('resize', scheduleResize);
   window.addEventListener('orientationchange', ()=>{ setTimeout(scheduleResize, 120); });
-
   window.addEventListener('touchmove', e => { e.preventDefault(); }, { passive:false });
 
   const FALL_SPEED = 9;
@@ -506,6 +503,7 @@
     };
   }
 
+  /* ======== SNOW ======== */
   function makeFlake(randomY){
     return {
       x: Math.random() * canvasW,
@@ -552,6 +550,7 @@
     ctx.restore();
   }
 
+  /* ======== STARS ======== */
   function makeStar(randomY){
     return {
       x: Math.random() * canvasW,
@@ -586,6 +585,7 @@
     ctx.restore();
   }
 
+  /* ======== SPARKS ======== */
   function spawnSparks(worldX, worldY){
     const count = 24;
     for (let i = 0; i < count; i++){
@@ -626,6 +626,7 @@
     ctx.restore();
   }
 
+  /* ======== FALLING BLOCKS ======== */
   function spawnFallingBlocks(blocks){
     for (const b of blocks){
       fallingBlocks.push({
@@ -712,10 +713,8 @@
         if (idx >= exts.length){ resolve(null); return; }
         const src = baseName + exts[idx++];
         const img = new Image();
-        img.onload = async ()=>{
-          try{ if (img.decode) await img.decode(); }catch(e){}
-          resolve(img);
-        };
+        img.decoding = 'async';
+        img.onload = ()=>resolve(img);
         img.onerror = ()=>tryNext();
         img.src = src;
       }
@@ -728,14 +727,52 @@
     loaderBarFill.style.width = p + '%';
   }
 
-  /* ✅ Быстрая параллельная загрузка (без createImageBitmap, чтобы не зависало) */
-  async function loadAllAssetsWithProgress(){
+  // ✅ Быстрый старт: грузим минимум и запускаем, остальное догружаем в фоне
+  async function loadCriticalAssets(){
     const EXT_ORDER = ['.webp', '.png', '.jpg', '.jpeg'];
 
+    // Критично: фон/мешки/coil/bonus + по 1 варианту каждого типа пола
     const tasks = [];
 
     for (const t of FLOOR_TYPES){
-      for (let i = 1; i <= t.variants; i++){
+      tasks.push(async ()=>{
+        const img = await loadWithFallback(`${t.filePrefix}1`, EXT_ORDER);
+        if (img) FLOOR_IMAGES[t.id].push(img);
+      });
+    }
+
+    tasks.push(async ()=>{ backgroundImg = await loadWithFallback('background', EXT_ORDER) || null; });
+    tasks.push(async ()=>{ bonusImg      = await loadWithFallback('bonus', EXT_ORDER)      || null; });
+    tasks.push(async ()=>{ coilImg       = await loadWithFallback('coil', EXT_ORDER)       || null; });
+    tasks.push(async ()=>{ bagBackImg    = await loadWithFallback('bag2', EXT_ORDER)       || null; });
+    tasks.push(async ()=>{ bagFrontImg   = await loadWithFallback('bag1', EXT_ORDER)       || null; });
+
+    const total = tasks.length;
+    let done = 0;
+
+    // Чуть ограничим параллельность в WebView, чтобы не душить декодер
+    const concurrency = IS_MOBILE ? 3 : 6;
+
+    const queue = tasks.slice();
+    async function worker(){
+      while (queue.length){
+        const job = queue.shift();
+        if (!job) break;
+        await job().catch(()=>{});
+        done++;
+        updateLoaderProgress(done, total);
+      }
+    }
+
+    await Promise.all(Array.from({length:concurrency}, worker));
+  }
+
+  async function loadRemainingAssetsInBackground(){
+    const EXT_ORDER = ['.webp', '.png', '.jpg', '.jpeg'];
+    const tasks = [];
+
+    for (const t of FLOOR_TYPES){
+      for (let i = 2; i <= t.variants; i++){
         tasks.push(async ()=>{
           const img = await loadWithFallback(`${t.filePrefix}${i}`, EXT_ORDER);
           if (img) FLOOR_IMAGES[t.id].push(img);
@@ -743,33 +780,19 @@
       }
     }
 
-    tasks.push(async ()=>{ backgroundImg = await loadWithFallback('background', EXT_ORDER) || null; });
-    tasks.push(async ()=>{ bonusImg      = await loadWithFallback('bonus', EXT_ORDER) || null; });
-    tasks.push(async ()=>{ coilImg       = await loadWithFallback('coil', EXT_ORDER)  || null; });
-    tasks.push(async ()=>{ bagBackImg    = await loadWithFallback('bag2', EXT_ORDER)  || null; });
-    tasks.push(async ()=>{ bagFrontImg   = await loadWithFallback('bag1', EXT_ORDER)  || null; });
-
-    const totalAssets = tasks.length;
-    let loadedAssets = 0;
-
-    const concurrency = IS_MOBILE ? 4 : 8;
+    const concurrency = IS_MOBILE ? 2 : 4;
+    const queue = tasks.slice();
 
     async function worker(){
-      while (true){
-        const job = tasks.shift();
+      while (queue.length){
+        const job = queue.shift();
         if (!job) break;
-        try{
-          await job();
-        } finally {
-          loadedAssets++;
-          updateLoaderProgress(loadedAssets, totalAssets);
-        }
+        await job().catch(()=>{});
       }
     }
 
-    const workers = [];
-    for (let i = 0; i < concurrency; i++) workers.push(worker());
-    await Promise.all(workers);
+    // запускаем, но не await — чтобы не блокировать игру
+    Promise.all(Array.from({length:concurrency}, worker)).catch(()=>{});
   }
 
   function drawBackground(worldHeight){
@@ -1155,12 +1178,10 @@
     drawFallingBlocks();
 
     drawBagBack();
-
     drawTower(swayOffset);
     drawCurrent(swayOffset);
     drawScore();
     drawComboFloat(swayOffset);
-
     drawBagFront();
 
     if (!gameOver && current){
@@ -1245,21 +1266,23 @@
 
   document.addEventListener('visibilitychange', ()=>{
     isPaused = document.hidden;
-    if (!document.hidden){
-      lastFrameTs = 0;
-    }
+    if (!document.hidden) lastFrameTs = 0;
   });
 
   async function boot(){
     doResizeCanvas();
     requestAnimationFrame(update);
 
-    await loadAllAssetsWithProgress();
+    // 1) грузим минимум для старта
+    await loadCriticalAssets();
 
     loaderOverlay.style.display = 'none';
     startOverlay.style.display = 'flex';
 
     resetGame();
+
+    // 2) остальное — фоном
+    loadRemainingAssetsInBackground();
   }
 
   boot();
