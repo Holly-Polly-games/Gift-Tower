@@ -8,18 +8,12 @@
 
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 
-  <!-- лёгкий ускоритель: заранее просим самые крупные картинки -->
-  <link rel="preload" as="image" href="background.webp">
-  <link rel="preload" as="image" href="bag1.webp">
-  <link rel="preload" as="image" href="bag2.webp">
-
   <style>
     :root{
       --page-bg:#ff4da6;
       --field-bg:#9b98e5;
       --control-green:#2e8b57;
       --btn-color:#fff;
-
       --lb-yellow:#ffe84a;
     }
 
@@ -342,7 +336,20 @@
 
 <script>
   /* ==========================
-     ✅ Leaderboard CONFIG
+     !!! ВАЖНО: убиваем старый Service Worker
+     ========================== */
+  (function killOldSW(){
+    try{
+      if ('serviceWorker' in navigator){
+        navigator.serviceWorker.getRegistrations()
+          .then(regs => regs.forEach(r => r.unregister()))
+          .catch(()=>{});
+      }
+    }catch(e){}
+  })();
+
+  /* ==========================
+     Leaderboard CONFIG
      ========================== */
   const LB_URL = 'https://script.google.com/macros/s/AKfycbzoUVB7zMI5lHb7ywXXBe1gkEHEo-mMmEJSizJ37aJdIK7yZ24tUUMDaAv3md-z-cyV/exec';
 
@@ -372,7 +379,6 @@
   const CAMERA_SCALE = 0.73;
 
   const BLOCK_HEIGHT = 30;
-
   const PERFECT_TOLERANCE = 8;
   const ANTI_BONUS_CHANCE = 0.10;
 
@@ -394,11 +400,9 @@
   FLOOR_TYPES.forEach(t => FLOOR_IMAGES[t.id] = []);
   const LAST_SKIN_IDX = {};
 
-  // могут быть ImageBitmap или HTMLImageElement — canvas.drawImage умеет оба
   let backgroundImg = null;
   let bonusImg = null;
   let coilImg = null;
-
   let bagFrontImg = null;
   let bagBackImg  = null;
 
@@ -535,6 +539,13 @@
     return Math.floor(Math.random() * (max - min + 1)) + min;
   }
 
+  function lerp(a, b, t){ return a + (b - a) * t; }
+
+  function lerpDt(a, b, k, dt60){
+    const t = 1 - Math.pow(1 - k, dt60);
+    return a + (b - a) * t;
+  }
+
   function normalizeHexColor(c){
     if (typeof c !== 'string') return '#000000';
     const s = c.trim();
@@ -548,13 +559,6 @@
     if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
     const num = parseInt(hex,16);
     return { r:(num>>16)&255, g:(num>>8)&255, b:num&255 };
-  }
-
-  function lerp(a, b, t){ return a + (b - a) * t; }
-
-  function lerpDt(a, b, k, dt60){
-    const t = 1 - Math.pow(1 - k, dt60);
-    return a + (b - a) * t;
   }
 
   function lerpColor(c1, c2, t){
@@ -788,207 +792,100 @@
   }
 
   /* ==========================
-     ✅ СУПЕР-СТАБИЛЬНЫЙ PRELOAD
-     - encodeURI для пробелов
-     - fetch+createImageBitmap (быстрее декод)
-     - fallback на Image()
-     - строгий контроль: если нет файла -> стоп и список missing
+     ASSET LOADING FIXES:
+     - encodeURI (пробелы)
+     - меньше таймаут, быстрее фейл
+     - логируем точный URL
      ========================== */
 
-  const EXT_ORDER = ['.webp', '.png', '.jpg', '.jpeg'];
+  // ВАЖНО: если у тебя ассеты не рядом с index.html, а в подпапке — поменяй на './assets/'
+  const ASSET_DIR = './';
 
-  function buildAssetTasks(){
-    const tasks = [];
-    for (const t of FLOOR_TYPES){
-      for (let i=1;i<=t.variants;i++){
-        tasks.push({ kind:'floor', typeId:t.id, base:`${t.filePrefix}${i}` });
-      }
-    }
-    tasks.push({ kind:'single', key:'background', base:'background' });
-    tasks.push({ kind:'single', key:'bonus', base:'bonus' });
-    tasks.push({ kind:'single', key:'coil', base:'coil' });
-    tasks.push({ kind:'single', key:'bag1', base:'bag1' });
-    tasks.push({ kind:'single', key:'bag2', base:'bag2' });
-    return tasks;
-  }
-
-  async function loadViaFetchBitmap(url, timeoutMs){
-    // timeout через AbortController
-    const ctrl = new AbortController();
-    const to = setTimeout(() => ctrl.abort(), timeoutMs);
-
-    try{
-      const res = await fetch(url, { cache:'force-cache', signal: ctrl.signal });
-      if (!res.ok) throw new Error('http_' + res.status);
-      const blob = await res.blob();
-
-      // createImageBitmap быстрее декодит и меньше лага
-      if ('createImageBitmap' in window){
-        try{
-          const bmp = await createImageBitmap(blob);
-          return bmp; // ImageBitmap
-        } catch(e){
-          // fallback ниже
-        }
-      }
-
-      // fallback: Image из blob
-      const objUrl = URL.createObjectURL(blob);
-      const img = await new Promise((resolve, reject) => {
-        const im = new Image();
-        im.decoding = 'async';
-        im.loading = 'eager';
-        im.onload = async () => {
-          try{ if (im.decode) await im.decode(); } catch(e){}
-          resolve(im);
-        };
-        im.onerror = () => reject(new Error('img_error'));
-        im.src = objUrl;
-      });
-      try{ URL.revokeObjectURL(objUrl); } catch(e){}
-      return img;
-    } finally {
-      clearTimeout(to);
-    }
-  }
-
-  async function loadViaImage(url, timeoutMs){
+  function loadImageOnce(url, timeout=6000){
     return new Promise((resolve, reject) => {
-      let done = false;
+      let done=false;
       const img = new Image();
       img.decoding = 'async';
       img.loading = 'eager';
-
-      const to = setTimeout(() => {
-        if (!done){
-          done = true;
-          img.src = '';
-          reject(new Error('timeout'));
-        }
-      }, timeoutMs);
-
-      img.onload = async () => {
-        if (done) return;
-        done = true;
-        clearTimeout(to);
-        try{ if (img.decode) await img.decode(); } catch(e){}
-        resolve(img);
-      };
-      img.onerror = () => {
-        if (done) return;
-        done = true;
-        clearTimeout(to);
-        reject(new Error('error'));
-      };
-
+      const to = setTimeout(()=>{ if(!done){ done=true; img.src=''; reject(new Error('timeout')); } }, timeout);
+      img.onload = ()=>{ if(done) return; done=true; clearTimeout(to); resolve(img); };
+      img.onerror = ()=>{ if(done) return; done=true; clearTimeout(to); reject(new Error('error')); };
       img.src = url;
     });
   }
 
-  async function tryLoadAnyExt(base, opts){
-    const { timeout=12000, bust=false } = opts || {};
-    for (const ext of EXT_ORDER){
-      const raw = base + ext + (bust ? `?_ts=${Date.now()}` : '');
-      const url = encodeURI(raw); // важно из-за пробелов
+  async function tryLoadBase(base, opts={timeout:6000, bust:false}){
+    const exts = ['.webp', '.png', '.jpg', '.jpeg'];
+    for (const ext of exts){
+      const raw = ASSET_DIR + base + ext;
+      const encoded = encodeURI(raw) + (opts.bust ? `?_ts=${Date.now()}` : '');
+
       try{
-        // сначала быстрый fetch-битмап, затем fallback
-        try{
-          const asset = await loadViaFetchBitmap(url, timeout);
-          return { ok:true, asset, url };
-        } catch(e1){
-          const asset = await loadViaImage(url, timeout);
-          return { ok:true, asset, url };
-        }
+        const img = await loadImageOnce(encoded, opts.timeout);
+        return { ok:true, img, url: encoded };
       } catch(e){
-        // пробуем следующий ext
+        // логируем только в debug, чтобы понимать что реально запрашивается
+        // (именно этот URL должен открываться в браузере)
+        // console.warn('[asset fail]', encoded, e.message);
       }
     }
-    return { ok:false, asset:null, url:'' };
+    return { ok:false };
   }
 
-  function pickConcurrency(){
-    const hc = navigator.hardwareConcurrency || 4;
-    // мобиле не надо слишком много параллельных запросов
-    if (IS_MOBILE) return Math.max(4, Math.min(6, hc));
-    return Math.max(6, Math.min(10, hc));
+  function buildAssetBases(){
+    const bases = [];
+    for (const t of FLOOR_TYPES){
+      for (let i=1;i<=t.variants;i++){
+        bases.push(`${t.filePrefix}${i}`);
+      }
+    }
+    bases.push('background','bonus','coil','bag1','bag2');
+    return bases;
   }
 
   async function preloadAllAssets(onProgress){
-    const tasks = buildAssetTasks();
-    const total = tasks.length;
+    const ASSET_BASES = buildAssetBases();
+    const total = ASSET_BASES.length;
     let loaded = 0;
+
+    const CONCURRENCY = IS_MOBILE ? 6 : 10; // на ПК можно больше
     let idx = 0;
+    const results = {};
 
-    const results = {}; // base -> asset|null
-    const missing = []; // [{base, tried: [...]}]
-
-    const CONCURRENCY = pickConcurrency();
-
-    const workers = new Array(CONCURRENCY).fill(0).map(async () => {
+    const workers = new Array(CONCURRENCY).fill(0).map(async ()=>{
       while (idx < total){
         const i = idx++;
-        const t = tasks[i];
+        const base = ASSET_BASES[i];
 
-        // 1) обычная попытка (кеш)
-        let res = await tryLoadAnyExt(t.base, { timeout: 14000, bust:false });
+        // 1) обычная попытка
+        let res = await tryLoadBase(base, { timeout: IS_MOBILE ? 6500 : 5000, bust:false });
 
-        // 2) если нет — один раз с bust (против старого кеша 404)
-        if (!res.ok){
-          res = await tryLoadAnyExt(t.base, { timeout: 14000, bust:true });
-        }
+        // 2) если не вышло — пробуем bust (на случай кеша/Pages)
+        if (!res.ok) res = await tryLoadBase(base, { timeout: IS_MOBILE ? 8000 : 6500, bust:true });
 
-        results[t.base] = res.ok ? res.asset : null;
-        if (!res.ok) missing.push(t.base);
+        results[base] = res.ok ? res.img : null;
 
         loaded++;
-        if (onProgress) onProgress(loaded, total, t.base, !!res.ok);
+        if (onProgress) onProgress(loaded, total, base, !!res.ok);
+
+        if (!res.ok){
+          // это важно: покажем точный путь, который ищем
+          console.error('[MISSING ASSET]', base, 'expected like:', encodeURI(ASSET_DIR + base + '.webp'));
+        }
       }
     });
 
     await Promise.all(workers);
-
-    return { results, missing };
-  }
-
-  function assertAssetsOrThrow(missing){
-    // Хотим 0 зелёных квадратов => если нет хоть одного нужного ассета — стопаемся
-    if (missing.length){
-      // Сформируем понятный список "что положить рядом с index.html"
-      const lines = [];
-      for (const base of missing){
-        lines.push(
-          `- ${base}.webp (или ${base}.png/.jpg/.jpeg)`
-        );
-      }
-      const msg =
-        'Не найдены ассеты (404). Положи их в корень рядом с index.html и проверь имена 1в1:\n\n' +
-        lines.join('\n') +
-        '\n\nВажно: пробелы/регистр должны совпадать.';
-
-      throw new Error(msg);
-    }
-
-    // и ещё: чтобы не было ситуации "тип есть, но без картинок"
-    for (const t of FLOOR_TYPES){
-      if (!FLOOR_IMAGES[t.id] || FLOOR_IMAGES[t.id].length < 1){
-        throw new Error(`Для типа ${t.label} нет ни одной картинки. Проверь файлы Tip${t.id} ...`);
-      }
-    }
-    if (!backgroundImg) throw new Error('Нет background.*');
-    if (!bagFrontImg) throw new Error('Нет bag1.*');
-    if (!bagBackImg) throw new Error('Нет bag2.*');
-    if (!bonusImg) throw new Error('Нет bonus.*');
-    if (!coilImg) throw new Error('Нет coil.*');
+    return results;
   }
 
   function assignLoadedAssets(results){
-    // floors
     for (const t of FLOOR_TYPES){
       FLOOR_IMAGES[t.id] = [];
       for (let i=1;i<=t.variants;i++){
         const base = `${t.filePrefix}${i}`;
-        const asset = results[base] || null;
-        if (asset) FLOOR_IMAGES[t.id].push(asset);
+        const img = results[base] || null;
+        if (img) FLOOR_IMAGES[t.id].push(img);
       }
     }
 
@@ -997,6 +894,17 @@
     coilImg = results['coil'] || null;
     bagFrontImg = results['bag1'] || null;
     bagBackImg  = results['bag2'] || null;
+  }
+
+  function ensureAllAssetsOrThrow(results){
+    const missing = [];
+    for (const base of buildAssetBases()){
+      if (!results[base]) missing.push(base);
+    }
+    if (missing.length){
+      const examples = missing.slice(0, 10).map(b => `- ${encodeURI(ASSET_DIR + b + '.webp')}`).join('\n');
+      throw new Error('Missing assets:\n' + examples + (missing.length>10 ? `\n...and ${missing.length-10} more` : ''));
+    }
   }
 
   function drawBackground(worldHeight){
@@ -1008,29 +916,22 @@
     ctx.fillRect(0, 0, canvasW, canvasH);
 
     if (backgroundImg){
-      const iw = backgroundImg.width || backgroundImg.naturalWidth;
-      const ih = backgroundImg.height || backgroundImg.naturalHeight;
-      if (iw && ih){
-        const imgAspect = iw / ih;
-        const targetW = canvasW;
-        const targetH = targetW / imgAspect;
-        const worldBottom = backgroundWorldBottom;
-        const worldTop = worldBottom - targetH;
-        const screenY = worldTop + offsetY;
-        ctx.drawImage(backgroundImg, 0, screenY, targetW, targetH);
-      }
+      const imgAspect = backgroundImg.width / backgroundImg.height;
+      const targetW = canvasW;
+      const targetH = targetW / imgAspect;
+      const worldBottom = backgroundWorldBottom;
+      const worldTop = worldBottom - targetH;
+      const screenY = worldTop + offsetY;
+      ctx.drawImage(backgroundImg, 0, screenY, targetW, targetH);
     }
   }
 
   function getBagWorldRect(){
     const w = canvasW * BAG_W_RATIO;
     const h = canvasH * BAG_H_RATIO;
-
     const x = (canvasW - w) / 2 + BAG_OFFSET_X;
-
     const offsetYScaled = (BAG_OFFSET_Y / 600) * canvasH;
     const y = FLOOR_Y - h + offsetYScaled;
-
     return { x, y, w, h };
   }
 
@@ -1156,23 +1057,18 @@
 
   function handlePerfectHit(landed, below){
     comboCount++;
-
     const sparkX = landed.x + landed.w / 2;
     const sparkY = landed.y + landed.h * 0.7;
     spawnSparks(sparkX, sparkY);
 
     if (comboCount >= 2){
       comboFloat = { x: landed.x + landed.w + 10, y: landed.y + landed.h * 0.2, text: 'x' + comboCount, life: 40, maxLife: 40 };
-    } else {
-      comboFloat = null;
-    }
+    } else comboFloat = null;
 
     swayAmplitude *= 0.7;
     speedGrowth = Math.max(MIN_SPEED_GROWTH, speedGrowth * 0.85);
 
-    if (comboCount > 0 && comboCount % 5 === 0){
-      pendingBonus = true;
-    }
+    if (comboCount > 0 && comboCount % 5 === 0) pendingBonus = true;
   }
 
   function handleNormalHit(){
@@ -1236,11 +1132,8 @@
       updateSwayParameters();
     }
 
-    spawn依Block();
+    spawnBlock();
   }
-
-  // маленький фикс: опечатка выше (spawn依Block) — исправляем:
-  function spawn依Block(){ spawnBlock(); }
 
   function landBlock(){
     baseLandBlock();
@@ -1346,7 +1239,6 @@
   }
 
   let isPaused = false;
-
   let lastFrameTs = 0;
 
   function update(ts){
@@ -1484,9 +1376,6 @@
     }
   });
 
-  /* ==========================
-     ✅ Leaderboard (JSONP)
-     ========================== */
   function getTgUser(){ const u = Telegram?.WebApp?.initDataUnsafe?.user; return u || null; }
   function getTgId(){ const u = getTgUser(); return u?.id ? String(u.id) : ''; }
   function getTgUsername(){
@@ -1560,12 +1449,8 @@
         score: score,
         tg_id: getTgId() || ''
       })
-      .then(res => {
-        console.log('submitScoreJSONP OK', res, 'ms=', Math.round(performance.now()-t0));
-      })
-      .catch(err => {
-        console.warn('submitScoreJSONP ERR', err, 'ms=', Math.round(performance.now()-t0));
-      });
+      .then(res => console.log('submitScoreJSONP OK', res, 'ms=', Math.round(performance.now()-t0)))
+      .catch(err => console.warn('submitScoreJSONP ERR', err, 'ms=', Math.round(performance.now()-t0)));
     }catch(e){
       console.warn('submit failed sync', e);
     }
@@ -1603,9 +1488,6 @@
   lbClose.addEventListener('click', ()=>{ lbModal.hidden = true; });
   lbModal.addEventListener('click', (e)=>{ if (e.target === lbModal) lbModal.hidden = true; });
 
-  /* ==========================
-     Boot
-     ========================== */
   async function boot(){
     doResizeCanvas();
     requestAnimationFrame(update);
@@ -1614,15 +1496,14 @@
     updateLoaderProgress(0, 100);
 
     try{
-      const { results, missing } = await preloadAllAssets((loaded, total)=>{
+      const results = await preloadAllAssets((loaded, total)=>{
         updateLoaderProgress(loaded, total);
       });
 
+      // если хоть что-то не подгрузилось — валим с понятной ошибкой
+      ensureAllAssetsOrThrow(results);
+
       assignLoadedAssets(results);
-
-      // строгая проверка, чтобы не было зелёных квадратов
-      assertAssetsOrThrow(missing);
-
       warmLb();
 
       loaderOverlay.style.display = 'none';
@@ -1631,8 +1512,15 @@
       resetGame();
     }catch(err){
       console.error('Preload failed', err);
-      loaderOverlay.style.display = 'none';
-      alert(String(err && err.message ? err.message : err));
+
+      alert(
+        'Не найдены ассеты (404) ИЛИ они не попали в деплой GitHub Pages.\n\n' +
+        '1) Открой на домене Pages: ' + encodeURI(location.origin + location.pathname.replace(/\/[^\/]*$/, '/') + 'TipA 1.webp') + '\n' +
+        'Если 404 — Pages деплоит не ту папку.\n\n' +
+        '2) Если файл открывается, но игра говорит 404 — виноват Service Worker/кеш.\n' +
+        'Открой страницу в браузере → очисти данные сайта или переоткрой после обновления.\n\n' +
+        'Тех.детали в консоли (F12).'
+      );
     }
   }
 
