@@ -338,7 +338,15 @@
   /* ==========================
      ✅ Leaderboard CONFIG
      ========================== */
-  const LB_URL = 'https://script.google.com/macros/s/AKfycbzoUVB7zMI5lHb7ywXXBe1gkEHEo-mMmEJSizJ37aJdIK7yZ24tUUMDaAv3md-z-cyV/exec';
+  const LB_URL = 'https://script.google.com/macros/s/AKfycbxHTrSijEU1Li9xqkDpMFD43K5q561HC492NiO0hbvQfiE2Tnln7JLR8FFtztTvCy1x/exec';
+
+  /* ==========================
+     ✅ Base path (ВАЖНО для GitHub Pages)
+     ========================== */
+  const BASE_PATH = new URL('.', location.href).href; // всегда заканчивается на /
+  function assetUrl(fileName){
+    return BASE_PATH + fileName;
+  }
 
   /* ==========================
      Canvas / DOM
@@ -375,7 +383,7 @@
   const COIL_W = 128;
   const COIL_H = 120;
 
-  /* ✅ под твои файлы TipA-1.webp, TipB-2.webp ... */
+  /* ✅ Под твои файлы TipA-1.webp, TipB-2.webp ... */
   const FLOOR_TYPES = [
     { id: 'A', label: 'Tip A', filePrefix: 'TipA-', variants: 2, w: 155, h: 121 },
     { id: 'B', label: 'Tip B', filePrefix: 'TipB-', variants: 3, w: 190, h: 149 },
@@ -478,7 +486,6 @@
 
   window.addEventListener('resize', scheduleResize);
   window.addEventListener('orientationchange', ()=>{ setTimeout(scheduleResize, 120); });
-
   window.addEventListener('touchmove', e => { e.preventDefault(); }, { passive:false });
 
   const FALL_SPEED = 9;
@@ -755,7 +762,6 @@
   }
 
   function randomFloorType(){ return FLOOR_TYPES[randInt(0, FLOOR_TYPES.length - 1)]; }
-
   function randomBaseFloorType(){
     const pool = FLOOR_TYPES.filter(t => t.id !== 'B');
     return pool[randInt(0, pool.length - 1)];
@@ -781,77 +787,84 @@
   }
 
   /* ==========================
-     ✅ PRELOAD: ТОЛЬКО WEBP, БЕЗ HEAD, БЕЗ FALLBACK
+     ✅ PRELOAD (быстро + только webp + правильный путь)
      ========================== */
-  function loadWebp(base, timeout = 8000){
+  function loadImageOnce(url, timeout=8000){
     return new Promise((resolve, reject) => {
+      let done=false;
       const img = new Image();
-      let done = false;
+      img.decoding = 'async';
+      img.loading = 'eager';
 
-      const to = setTimeout(() => {
-        if (!done){
-          done = true;
-          img.src = '';
+      const to = setTimeout(()=>{
+        if(!done){
+          done=true;
+          img.src='';
           reject(new Error('timeout'));
         }
       }, timeout);
 
-      img.onload = () => {
-        if (done) return;
-        done = true;
+      img.onload = ()=>{
+        if(done) return;
+        done=true;
         clearTimeout(to);
         resolve(img);
       };
-
-      img.onerror = () => {
-        if (done) return;
-        done = true;
+      img.onerror = ()=>{
+        if(done) return;
+        done=true;
         clearTimeout(to);
         reject(new Error('error'));
       };
 
-      img.decoding = 'async';
-      img.loading = 'eager';
-      img.src = `./${base}.webp`;
+      img.src = url;
     });
   }
 
-  function buildAssetBases(){
-    const bases = [];
+  async function tryLoadWebp(fileName){
+    const url = assetUrl(fileName);
+    try{
+      const img = await loadImageOnce(url, 8000);
+      return { ok:true, img, url };
+    }catch(e){
+      console.warn('ASSET FAIL:', url, e);
+      return { ok:false, url };
+    }
+  }
+
+  function buildAssetFiles(){
+    const files = [];
     for (const t of FLOOR_TYPES){
       for (let i=1;i<=t.variants;i++){
-        bases.push(`${t.filePrefix}${i}`); // TipA-1, TipB-3...
+        files.push(`${t.filePrefix}${i}.webp`); // TipA-1.webp
       }
     }
-    bases.push('background','bonus','coil','bag1','bag2');
-    return bases;
+    files.push('background.webp','bonus.webp','coil.webp','bag1.webp','bag2.webp');
+    return files;
   }
 
   async function preloadAllAssets(onProgress){
-    const ASSET_BASES = buildAssetBases();
-    const total = ASSET_BASES.length;
+    const files = buildAssetFiles();
+    const total = files.length;
     let loaded = 0;
 
-    const results = {};
-    const missing = [];
-
-    const CONCURRENCY = IS_MOBILE ? 4 : 6;
+    const CONCURRENCY = IS_MOBILE ? 4 : 10;
     let idx = 0;
 
-    const workers = new Array(CONCURRENCY).fill(0).map(async () => {
+    const results = {};   // fileName -> Image|null
+    const missing = [];   // url list
+
+    const workers = new Array(CONCURRENCY).fill(0).map(async ()=>{
       while (idx < total){
         const i = idx++;
-        const base = ASSET_BASES[i];
+        const file = files[i];
 
-        try{
-          results[base] = await loadWebp(base, 8000);
-        }catch(e){
-          results[base] = null;
-          missing.push(base);
-        }
+        const res = await tryLoadWebp(file);
+        results[file] = res.ok ? res.img : null;
+        if (!res.ok) missing.push(res.url);
 
         loaded++;
-        onProgress?.(loaded, total);
+        onProgress?.(loaded, total, file, res.ok);
       }
     });
 
@@ -863,17 +876,17 @@
     for (const t of FLOOR_TYPES){
       FLOOR_IMAGES[t.id] = [];
       for (let i=1;i<=t.variants;i++){
-        const base = `${t.filePrefix}${i}`;
-        const img = results[base] || null;
+        const key = `${t.filePrefix}${i}.webp`;
+        const img = results[key] || null;
         if (img) FLOOR_IMAGES[t.id].push(img);
       }
     }
 
-    backgroundImg = results['background'] || null;
-    bonusImg      = results['bonus'] || null;
-    coilImg       = results['coil'] || null;
-    bagFrontImg   = results['bag1'] || null;
-    bagBackImg    = results['bag2'] || null;
+    backgroundImg = results['background.webp'] || null;
+    bonusImg      = results['bonus.webp'] || null;
+    coilImg       = results['coil.webp'] || null;
+    bagFrontImg   = results['bag1.webp'] || null;
+    bagBackImg    = results['bag2.webp'] || null;
   }
 
   function drawBackground(worldHeight){
@@ -900,7 +913,6 @@
     const h = canvasH * BAG_H_RATIO;
 
     const x = (canvasW - w) / 2 + BAG_OFFSET_X;
-
     const offsetYScaled = (BAG_OFFSET_Y / 600) * canvasH;
     const y = FLOOR_Y - h + offsetYScaled;
 
@@ -1027,7 +1039,7 @@
     updateSwayParameters();
   }
 
-  function handlePerfectHit(landed, below){
+  function handlePerfectHit(landed){
     comboCount++;
 
     const sparkX = landed.x + landed.w / 2;
@@ -1085,7 +1097,7 @@
     tower.push(current);
 
     const isPerfect = Math.abs(curCenter - lastCenter) <= PERFECT_TOLERANCE;
-    if (isPerfect) handlePerfectHit(current, last);
+    if (isPerfect) handlePerfectHit(current);
     else handleNormalHit();
 
     score = tower.length - 1;
@@ -1149,7 +1161,7 @@
       const y = screenY;
 
       if (block.img) ctx.drawImage(block.img, x, y, block.w, block.h);
-      else { /* если нет img - не рисуем зелёный квадрат */ }
+      else { ctx.fillStyle = block.color || '#66bb6a'; ctx.fillRect(x, y, block.w, block.h); }
     }
   }
 
@@ -1162,7 +1174,7 @@
     const y = screenY;
 
     if (current.img) ctx.drawImage(current.img, x, y, current.w, current.h);
-    else { /* если нет img - не рисуем зелёный квадрат */ }
+    else { ctx.fillStyle = current.color || '#66bb6a'; ctx.fillRect(x, y, current.w, current.h); }
   }
 
   function drawScore(){
@@ -1354,7 +1366,7 @@
   });
 
   /* ==========================
-     Leaderboard JSONP
+     ✅ Leaderboard JSONP
      ========================== */
   function getTgUser(){ const u = Telegram?.WebApp?.initDataUnsafe?.user; return u || null; }
   function getTgId(){ const u = getTgUser(); return u?.id ? String(u.id) : ''; }
@@ -1463,6 +1475,17 @@
   lbModal.addEventListener('click', (e)=>{ if (e.target === lbModal) lbModal.hidden = true; });
 
   /* ==========================
+     ✅ Service Worker register (с версией)
+     ========================== */
+  (function registerSW(){
+    try{
+      if ('serviceWorker' in navigator){
+        navigator.serviceWorker.register(assetUrl('sw.js') + '?v=hp-tower-2').catch(()=>{});
+      }
+    }catch(e){}
+  })();
+
+  /* ==========================
      Boot
      ========================== */
   async function boot(){
@@ -1473,19 +1496,21 @@
     updateLoaderProgress(0, 100);
 
     try{
+      const t0 = performance.now();
       const { results, missing } = await preloadAllAssets((loaded, total)=>{
         updateLoaderProgress(loaded, total);
       });
 
       assignLoadedAssets(results);
 
-      // если не загрузились хотя бы базовые типы — показываем понятную ошибку
-      const essentialMissing = missing.filter(b => b.startsWith('Tip'));
+      // Если не загрузились Tip'ы — покажем список URL, которые реально не открылись
+      const essentialMissing = missing.filter(u => /Tip[A-Z]-\d+\.webp$/i.test(u));
       if (essentialMissing.length){
         alert(
-          'Не найдены ассеты (.webp). Проверь, что файлы лежат в КОРНЕ рядом с index.html:\n\n' +
-          essentialMissing.slice(0, 30).map(x => `- ${x}.webp`).join('\n') +
-          (essentialMissing.length > 30 ? '\n\n...и ещё ' + (essentialMissing.length - 30) + ' шт.' : '')
+          'Не удалось загрузить ассеты. Вот точные URL, которые НЕ открылись:\n\n' +
+          essentialMissing.slice(0, 20).map(x => `- ${x}`).join('\n') +
+          (essentialMissing.length > 20 ? '\n\n...и ещё ' + (essentialMissing.length - 20) + ' шт.' : '') +
+          '\n\nЕсли URL открывается в браузере, а игра говорит что нет — значит кеш/ServiceWorker в Telegram держит старую версию.'
         );
       }
 
@@ -1495,9 +1520,10 @@
       startOverlay.style.display = 'flex';
 
       resetGame();
+      console.log('Assets preload ms=', Math.round(performance.now() - t0));
     }catch(err){
       console.error('Preload failed', err);
-      alert('Ошибка загрузки ассетов. Проверь, что файлы реально лежат рядом с index.html и названия совпадают.');
+      alert('Ошибка загрузки ассетов. Открой консоль и посмотри строки "ASSET FAIL: ..." — там будет точный URL.');
     }
   }
 
@@ -1505,3 +1531,4 @@
 </script>
 </body>
 </html>
+
