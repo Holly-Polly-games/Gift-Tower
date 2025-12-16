@@ -1475,17 +1475,6 @@
   lbModal.addEventListener('click', (e)=>{ if (e.target === lbModal) lbModal.hidden = true; });
 
   /* ==========================
-     ✅ Service Worker register (с версией)
-     ========================== */
-  (function registerSW(){
-    try{
-      if ('serviceWorker' in navigator){
-        navigator.serviceWorker.register(assetUrl('sw.js') + '?v=hp-tower-2').catch(()=>{});
-      }
-    }catch(e){}
-  })();
-
-  /* ==========================
      Boot
      ========================== */
   async function boot(){
@@ -1531,3 +1520,4 @@
 </script>
 </body>
 </html>
+
