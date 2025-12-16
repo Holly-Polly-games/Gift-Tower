@@ -376,13 +376,13 @@
   const COIL_H = 120;
 
   /* ✅ ВАЖНО: под твои файлы TipA-1.webp, TipB-2.webp ... */
-  const FLOOR_TYPES = [
-    { id: 'A', label: 'Tip A', filePrefix: 'TipA-', variants: 2, w: 155, h: 121 },
-    { id: 'B', label: 'Tip B', filePrefix: 'TipB-', variants: 3, w: 190, h: 149 },
-    { id: 'C', label: 'Tip C', filePrefix: 'TipC-', variants: 2, w: 116, h: 186 },
-    { id: 'D', label: 'Tip D', filePrefix: 'TipD-', variants: 4, w: 100, h: 100 },
-    { id: 'F', label: 'Tip F', filePrefix: 'TipF-', variants: 3, w: 119, h: 205 }
-  ];
+const FLOOR_TYPES = [
+  { id: 'A', label: 'Tip A', filePrefix: 'TipA-', variants: 2, w: 155, h: 121 },
+  { id: 'B', label: 'Tip B', filePrefix: 'TipB-', variants: 3, w: 190, h: 149 },
+  { id: 'C', label: 'Tip C', filePrefix: 'TipC-', variants: 2, w: 116, h: 186 },
+  { id: 'D', label: 'Tip D', filePrefix: 'TipD-', variants: 4, w: 100, h: 100 },
+  { id: 'F', label: 'Tip F', filePrefix: 'TipF-', variants: 3, w: 119, h: 205 }
+];
 
   const FLOOR_IMAGES = {};
   FLOOR_TYPES.forEach(t => FLOOR_IMAGES[t.id] = []);
@@ -1517,4 +1517,5 @@
 </script>
 </body>
 </html>
+
 
