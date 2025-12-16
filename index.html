@@ -342,7 +342,7 @@
   /* ==========================
      ✅ Leaderboard CONFIG
      ========================== */
-  const LB_URL = 'https://script.google.com/macros/s/AKfycbxHTrSijEU1Li9xqkDpMFD43K5q561HC492NiO0hbvQfiE2Tnln7JLR8FFtztTvCy1x/exec';
+  const LB_URL = 'https://script.google.com/macros/s/AKfycbzoUVB7zMI5lHb7ywXXBe1gkEHEo-mMmEJSizJ37aJdIK7yZ24tUUMDaAv3md-z-cyV/exec';
 
   /* ==========================
      Canvas / DOM
@@ -384,13 +384,13 @@
   const COIL_W = 128;
   const COIL_H = 120;
 
-  const FLOOR_TYPES = [
-    { id: 'A', label: 'Tip A', filePrefix: 'Tip-A-', variants: 2, w: 155, h: 121 },
-    { id: 'B', label: 'Tip B', filePrefix: 'Tip-B-', variants: 3, w: 190, h: 149 },
-    { id: 'C', label: 'Tip C', filePrefix: 'Tip-C-', variants: 2, w: 116, h: 186 },
-    { id: 'D', label: 'Tip D', filePrefix: 'Tip-D-', variants: 4, w: 100, h: 100 },
-    { id: 'F', label: 'Tip F', filePrefix: 'Tip-F-', variants: 3, w: 119, h: 205 }
-  ];
+const FLOOR_TYPES = [
+  { id: 'A', label: 'Tip A', filePrefix: 'TipA ', variants: 2, w: 155, h: 121 },
+  { id: 'B', label: 'Tip B', filePrefix: 'TipB ', variants: 3, w: 190, h: 149 },
+  { id: 'C', label: 'Tip C', filePrefix: 'TipC ', variants: 2, w: 116, h: 186 },
+  { id: 'D', label: 'Tip D', filePrefix: 'TipD ', variants: 4, w: 100, h: 100 },
+  { id: 'F', label: 'Tip F', filePrefix: 'TipF ', variants: 3, w: 119, h: 205 }
+];
 
   const FLOOR_IMAGES = {};
   FLOOR_TYPES.forEach(t => FLOOR_IMAGES[t.id] = []);
@@ -1522,3 +1522,4 @@
 </script>
 </body>
 </html>
+
