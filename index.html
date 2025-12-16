@@ -2,11 +2,8 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8" />
-  <base href="/Gift-Tower/">
-
   <meta name="viewport"
         content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
-
   <title>Holly Polly — Башня</title>
 
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
@@ -21,11 +18,12 @@
     }
 
     html,body{
-      height:100%;
+      height:100dvh;
       margin:0;
       overflow:hidden;
       background:var(--page-bg);
-      font-family:Futura,Arial,sans-serif;
+      -webkit-text-size-adjust:100%;
+      font-family:"Futura","Trebuchet MS",Arial,sans-serif;
     }
 
     body{
@@ -34,261 +32,1483 @@
       align-items:center;
       padding:12px;
       box-sizing:border-box;
+      overscroll-behavior:none;
+      touch-action:none;
+      position:relative;
     }
 
     header{
       text-align:center;
       margin-bottom:6px;
+      width:100%;
       user-select:none;
+      position:relative;
+      z-index:2;
     }
-
     header img{
-      max-height:64px;
+      max-height:67px;
       display:block;
       margin:0 auto;
     }
-
     header .slogan{
+      color:#000;
+      margin-top:6px;
       font-weight:700;
-      font-size:0.9em;
-      margin-top:4px;
+      font-size:0.92em;
+      line-height:1.1;
     }
 
     #container{
       background:var(--field-bg);
       border-radius:14px;
-      box-shadow:0 10px 30px rgba(0,0,0,.25);
-      overflow:hidden;
+      box-shadow:0 10px 30px rgba(0,0,0,0.25);
       position:relative;
+      touch-action:none;
+      overflow:hidden;
+      z-index:2;
     }
 
     canvas{
       display:block;
+      background:transparent;
+      border-radius:12px;
+      -webkit-user-select:none;
+      user-select:none;
+      image-rendering:optimizeQuality;
+      touch-action:none;
     }
 
-    .loader{
+    .overlay-start{
       position:absolute;
       inset:0;
       display:flex;
       align-items:center;
       justify-content:center;
-      background:rgba(0,0,0,.45);
-      z-index:10;
+      z-index:60;
+      pointer-events:auto;
+    }
+    .overlay-start .panel{
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+      align-items:center;
+      justify-content:center;
+      max-width:84%;
+    }
+    .overlay-start .msg{
+      padding:14px 18px;
+      background:rgba(0,0,0,0.32);
+      color:#fff;
+      border-radius:12px;
+      font-size:18px;
+      text-align:center;
+      backdrop-filter:blur(4px);
+      -webkit-backdrop-filter:blur(4px);
+      width:100%;
+      box-sizing:border-box;
+    }
+    .overlay-start .rules{
+      padding:14px 18px;
+      background:rgba(0,0,0,0.32);
+      color:#fff;
+      border-radius:12px;
+      font-size:14px;
+      text-align:left;
+      backdrop-filter:blur(4px);
+      -webkit-backdrop-filter:blur(4px);
+      width:100%;
+      box-sizing:border-box;
+      line-height:1.35;
+    }
+    .overlay-start .rules .title{
+      font-weight:700;
+      text-decoration:underline;
+      margin-bottom:8px;
+    }
+    .overlay-start .rules ul{
+      margin:0;
+      padding-left:18px;
+    }
+    .overlay-start .rules li{
+      margin:6px 0;
     }
 
-    .bar{
-      width:60%;
+    .gameover-overlay{
+      position:absolute;
+      inset:0;
+      display:none;
+      align-items:center;
+      justify-content:center;
+      z-index:70;
+      pointer-events:auto;
+    }
+    .gameover-panel{
+      background:rgba(0,0,0,0.75);
+      color:#fff;
+      padding:20px 24px;
+      border-radius:16px;
+      text-align:center;
+      min-width:220px;
+      max-width:80%;
+      box-shadow:0 10px 24px rgba(0,0,0,0.35);
+    }
+    .gameover-title{
+      font-size:22px;
+      font-weight:700;
+      margin-bottom:10px;
+    }
+    .gameover-score{
+      font-size:16px;
+      margin-bottom:18px;
+    }
+    .gameover-buttons{
+      display:flex;
+      gap:10px;
+      justify-content:center;
+      flex-wrap:wrap;
+    }
+    .go-btn{
+      background:var(--control-green);
+      color:var(--btn-color);
+      border:none;
+      padding:12px 20px;
+      border-radius:12px;
+      font-size:16px;
+      cursor:pointer;
+      box-shadow:0 6px 12px rgba(0,0,0,0.18);
+      min-width:160px;
+      touch-action:manipulation;
+    }
+    .go-btn.secondary{
+      background:var(--lb-yellow);
+      color:#000;
+    }
+
+    @media (max-width:480px){
+      .go-btn{ font-size:15px; padding:10px 16px; min-width:150px; }
+      .overlay-start .msg{ font-size:17px; }
+      .overlay-start .rules{ font-size:13px; }
+    }
+
+    .loader-overlay{
+      position:absolute;
+      inset:0;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      z-index:80;
+      background:rgba(0,0,0,0.45);
+      backdrop-filter:blur(4px);
+      -webkit-backdrop-filter:blur(4px);
+    }
+    .loader-box{
+      background:transparent;
+      padding:0;
+      min-width:40%;
+      max-width:70%;
+    }
+    .loader-bar{
+      width:100%;
       height:8px;
-      background:rgba(255,255,255,.4);
       border-radius:999px;
+      background:rgba(255,255,255,0.35);
       overflow:hidden;
     }
-
-    .bar > div{
-      height:100%;
+    .loader-bar-fill{
       width:0%;
+      height:100%;
       background:var(--control-green);
-      transition:width .15s linear;
+      border-radius:999px;
+      transition:width 0.15s ease-out;
     }
+
+    .lb-modal{
+      position:fixed;
+      inset:0;
+      background:rgba(0,0,0,.5);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      z-index:120;
+    }
+    .lb-modal[hidden]{ display:none; }
+    .lb-card{
+      background:#fff;
+      border-radius:14px;
+      width:min(540px,94vw);
+      box-shadow:0 10px 40px rgba(0,0,0,.35);
+      padding:12px 14px;
+      max-height:70vh;
+      overflow:auto;
+    }
+    .lb-head{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:8px;
+    }
+    .lb-head h3{
+      margin:0;
+      font-size:18px;
+      color:#000;
+    }
+    .lb-close{
+      background:#eee;
+      border:none;
+      border-radius:8px;
+      padding:6px 10px;
+      cursor:pointer;
+    }
+    .lb-list{
+      margin:8px 0 0;
+      padding:0 10px 8px;
+      list-style:none;
+    }
+    .lb-item{
+      padding:8px;
+      border-radius:8px;
+      display:flex;
+      justify-content:space-between;
+      gap:8px;
+      align-items:center;
+      margin-bottom:8px;
+      background:#f6f6f6;
+      color:#000;
+    }
+    .lb-top5{ background:#fff8d6; }
   </style>
 </head>
-
 <body>
 
 <header>
-  <img src="logo.png" alt="logo">
+  <img src="logo.png" alt="logo" decoding="async">
   <div class="slogan">Holly Polly — твоя лучшая подруга!</div>
 </header>
 
-<div id="container">
-  <canvas id="game"></canvas>
+<div id="container" role="application" aria-label="Игра Башня">
+  <canvas id="game" aria-hidden="false"></canvas>
 
-  <div id="loader" class="loader">
-    <div class="bar">
-      <div id="barFill"></div>
+  <div id="loaderOverlay" class="loader-overlay">
+    <div class="loader-box">
+      <div class="loader-bar">
+        <div id="loaderBarFill" class="loader-bar-fill"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="startOverlay" class="overlay-start" style="display:none;">
+    <div class="panel">
+      <div class="msg">Тапни, чтобы начать строить башню</div>
+
+      <div class="rules">
+        <div class="title">Правила игры:</div>
+        <ul>
+          <li>Собирай башню и ставь рекорды - выигрывай подарки.</li>
+          <li>Идеальные попадания и комбо помогут строить выше и дадут приятные бонусы.</li>
+          <li>Не все что падает делает башню выше, будь внимательнее!</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div id="gameOverOverlay" class="gameover-overlay">
+    <div class="gameover-panel">
+      <div class="gameover-title">Game Over</div>
+      <div id="gameOverScore" class="gameover-score"></div>
+      <div class="gameover-buttons">
+        <button id="btnRestart" class="go-btn">Заново</button>
+        <button id="btnLeaderboard" class="go-btn secondary">Таблица лидеров</button>
+      </div>
     </div>
   </div>
 </div>
 
+<div id="leaderboardModal" class="lb-modal" hidden>
+  <div class="lb-card">
+    <div class="lb-head">
+      <h3>Таблица лидеров</h3>
+      <button id="lbClose" class="lb-close">✕</button>
+    </div>
+    <div id="lbLoading" style="display:none;margin-top:8px;color:#000;">Загрузка...</div>
+    <ol id="lbList" class="lb-list"></ol>
+  </div>
+</div>
+
 <script>
-/* =====================================================
-   CONFIG
-   ===================================================== */
-const CAMERA_SCALE = 0.73;
-const MANIFEST_URL = 'asset-manifest.json';
+  /* ==========================
+     ✅ Leaderboard CONFIG
+     ========================== */
+  const LB_URL = 'https://script.google.com/macros/s/AKfycbzoUVB7zMI5lHb7ywXXBe1gkEHEo-mMmEJSizJ37aJdIK7yZ24tUUMDaAv3md-z-cyV/exec';
 
-/* =====================================================
-   CANVAS
-   ===================================================== */
-const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d');
+  /* ==========================
+     ✅ BASE PATH (важно для GitHub Pages / Telegram WebView)
+     ========================== */
+  const BASE = new URL('.', location.href).href; // всегда заканчивается на /
+  const asset = (name) => BASE + name;
 
-const container = document.getElementById('container');
-const loader = document.getElementById('loader');
-const barFill = document.getElementById('barFill');
+  /* ==========================
+     Canvas / DOM
+     ========================== */
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d', { alpha:true, desynchronized:true });
 
-let DPR = Math.min(2, window.devicePixelRatio || 1);
-let W = 0, H = 0;
+  const container = document.getElementById('container');
+  const startOverlay = document.getElementById('startOverlay');
+  const loaderOverlay = document.getElementById('loaderOverlay');
+  const loaderBarFill = document.getElementById('loaderBarFill');
+  const gameOverOverlay = document.getElementById('gameOverOverlay');
+  const gameOverScoreEl = document.getElementById('gameOverScore');
+  const btnRestart = document.getElementById('btnRestart');
+  const btnLeaderboard = document.getElementById('btnLeaderboard');
 
-function resize(){
-  const w = Math.min(window.innerWidth - 24, 960);
-  const h = window.innerHeight - document.querySelector('header').offsetHeight - 24;
+  const lbModal = document.getElementById('leaderboardModal');
+  const lbList = document.getElementById('lbList');
+  const lbClose = document.getElementById('lbClose');
+  const lbLoading = document.getElementById('lbLoading');
 
-  const aspect = 3/2;
-  let cssW = Math.min(w, h / aspect);
-  let cssH = cssW * aspect;
+  let DPR = 1;
+  let canvasW = 0, canvasH = 0;
 
-  container.style.width = cssW + 'px';
-  container.style.height = cssH + 'px';
+  const CAMERA_SCALE = 0.73;
+  const BLOCK_HEIGHT = 30;
 
-  canvas.style.width = cssW + 'px';
-  canvas.style.height = cssH + 'px';
+  const PERFECT_TOLERANCE = 8;
+  const ANTI_BONUS_CHANCE = 0.10;
 
-  canvas.width = cssW * DPR;
-  canvas.height = cssH * DPR;
+  const BONUS_W = 150;
+  const BONUS_H = 100;
 
-  W = cssW / CAMERA_SCALE;
-  H = cssH / CAMERA_SCALE;
+  const COIL_W = 128;
+  const COIL_H = 120;
 
-  ctx.setTransform(DPR * CAMERA_SCALE,0,0,DPR * CAMERA_SCALE,0,0);
-}
-resize();
-window.addEventListener('resize', resize);
+  /* ✅ Имена соответствуют твоим файлам TipA-1.webp, TipB-2.webp ... */
+  const FLOOR_TYPES = [
+    { id: 'A', label: 'Tip A', filePrefix: 'TipA-', variants: 2, w: 155, h: 121 },
+    { id: 'B', label: 'Tip B', filePrefix: 'TipB-', variants: 3, w: 190, h: 149 },
+    { id: 'C', label: 'Tip C', filePrefix: 'TipC-', variants: 2, w: 116, h: 186 },
+    { id: 'D', label: 'Tip D', filePrefix: 'TipD-', variants: 4, w: 100, h: 100 },
+    { id: 'F', label: 'Tip F', filePrefix: 'TipF-', variants: 3, w: 119, h: 205 }
+  ];
 
-/* =====================================================
-   ASSET LOADER (ЕДИНСТВЕННЫЙ И ПРАВИЛЬНЫЙ)
-   ===================================================== */
-let ASSET_VER = '';
+  const FLOOR_IMAGES = {};
+  FLOOR_TYPES.forEach(t => FLOOR_IMAGES[t.id] = []);
+  const LAST_SKIN_IDX = {};
 
-function assetUrl(name){
-  return ASSET_VER ? `${name}?v=${ASSET_VER}` : name;
-}
+  let backgroundImg = null;
+  let bonusImg = null;
+  let coilImg = null;
 
-function loadImage(url){
-  return new Promise((resolve, reject)=>{
-    const img = new Image();
-    img.onload = ()=>resolve(img);
-    img.onerror = ()=>reject(url);
-    img.src = url;
-  });
-}
+  let bagFrontImg = null;
+  let bagBackImg  = null;
 
-async function loadAssets(){
-  const r = await fetch(MANIFEST_URL, { cache:'no-store' });
-  if(!r.ok) throw 'manifest fail';
+  const BAG_W_RATIO = 0.52;
+  const BAG_H_RATIO = 0.26;
+  const BAG_OFFSET_X = 0;
+  const BAG_OFFSET_Y = 40;
 
-  const json = await r.json();
-  ASSET_VER = json.version || Date.now();
-  const files = json.assets;
+  const SKY_STAGE1 = 3750;
+  const SKY_STAGE2 = 7650;
+  const SKY_STAGE3 = 10710;
 
-  let loaded = 0;
-  const out = {};
+  const COLOR_SUNSET   = '#ff9a6c';
+  const COLOR_LIGHT    = '#b3e5fc';
+  const COLOR_DARK     = '#001b44';
+  const COLOR_SPACE    = '#020010';
 
-  for(const f of files){
+  const HORIZON_FLOORS = 3;
+  let FLOOR_Y = 0;
+  let HORIZON_Y = 0;
+
+  let backgroundWorldBottom = 0;
+
+  const IS_MOBILE = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+  let lastCssW = 0, lastCssH = 0;
+  let resizeTimer = 0;
+
+  function doResizeCanvas(){
+    const vw = window.innerWidth;
+    const vh = Math.min(
+      window.visualViewport?.height || window.innerHeight,
+      document.documentElement.clientHeight || window.innerHeight
+    );
+    const headerH = document.querySelector('header')?.getBoundingClientRect().height || 0;
+    const EXTRA_BOTTOM = 18;
+
+    const maxW = Math.min(vw - 32, 960);
+    const freeH = vh - headerH - EXTRA_BOTTOM;
+
+    const aspect = 3/2;
+    let cssW = Math.floor(Math.min(maxW, freeH / aspect));
+    let cssH = Math.floor(cssW * aspect);
+
+    if (cssW < 260){
+      cssW = 260;
+      cssH = Math.floor(cssW * aspect);
+    }
+
+    if (Math.abs(cssW - lastCssW) < 2 && Math.abs(cssH - lastCssH) < 2) return;
+    lastCssW = cssW; lastCssH = cssH;
+
+    canvas.style.width = cssW + 'px';
+    canvas.style.height = cssH + 'px';
+    container.style.width = cssW + 'px';
+    container.style.height = cssH + 'px';
+
+    const dprCap = IS_MOBILE ? 1.5 : 1.8;
+    DPR = Math.min(dprCap, Math.max(1, window.devicePixelRatio || 1));
+
+    canvas.width = Math.round(cssW * DPR);
+    canvas.height = Math.round(cssH * DPR);
+
+    canvasW = cssW / CAMERA_SCALE;
+    canvasH = cssH / CAMERA_SCALE;
+
+    ctx.setTransform(DPR * CAMERA_SCALE, 0, 0, DPR * CAMERA_SCALE, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+
+    const FLOOR_OFFSET = -30;
+    HORIZON_Y = canvasH - HORIZON_FLOORS * BLOCK_HEIGHT - FLOOR_OFFSET;
+    FLOOR_Y = HORIZON_Y;
+
+    if (snowflakes.length) initSnow();
+    if (stars.length) initStars();
+  }
+
+  function scheduleResize(){
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(doResizeCanvas, IS_MOBILE ? 120 : 0);
+  }
+
+  window.addEventListener('resize', scheduleResize);
+  window.addEventListener('orientationchange', ()=>{ setTimeout(scheduleResize, 120); });
+  window.addEventListener('touchmove', e => { e.preventDefault(); }, { passive:false });
+
+  const FALL_SPEED = 9;
+  const MOVE_SPEED_START = 2.5;
+
+  const BASE_SPEED_GROWTH = 0.20;
+  const MIN_SPEED_GROWTH  = 0.08;
+
+  const LEAN_TO_SWAY = 40;
+  const MAX_SWAY = 35;
+
+  let tower = [];
+  let current = null;
+
+  let moveSpeed = MOVE_SPEED_START;
+  let speedGrowth = BASE_SPEED_GROWTH;
+
+  let direction = 1;
+  let isDropping = false;
+  let gameOver = false;
+  let gameStarted = false;
+  let score = 0;
+
+  let swayActive = false;
+  let swayPhase = 0;
+  let swayAmplitude = 0;
+
+  let offsetY = 0;
+  let targetOffsetY = 0;
+  let worldHeight = 0;
+
+  let comboCount = 0;
+  let comboFloat = null;
+
+  let pendingBonus = false;
+
+  let snowflakes = [];
+  const SNOW_COUNT = 20;
+
+  let stars = [];
+  const STAR_COUNT = 8;
+
+  let sparks = [];
+  let fallingBlocks = [];
+
+  function randInt(min, max){
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+  }
+
+  function normalizeHexColor(c){
+    if (typeof c !== 'string') return '#000000';
+    const s = c.trim();
+    if (/^#([0-9a-fA-F]{3})$/.test(s)) return s;
+    if (/^#([0-9a-fA-F]{6})$/.test(s)) return s;
+    return '#000000';
+  }
+
+  function hexToRgb(hex){
+    hex = normalizeHexColor(hex).replace('#','');
+    if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+    const num = parseInt(hex,16);
+    return { r:(num>>16)&255, g:(num>>8)&255, b:num&255 };
+  }
+
+  function lerp(a, b, t){ return a + (b - a) * t; }
+
+  function lerpDt(a, b, k, dt60){
+    const t = 1 - Math.pow(1 - k, dt60);
+    return a + (b - a) * t;
+  }
+
+  function lerpColor(c1, c2, t){
+    t = Math.max(0, Math.min(1, t));
+    c1 = normalizeHexColor(c1);
+    c2 = normalizeHexColor(c2);
+    const rgb1 = hexToRgb(c1);
+    const rgb2 = hexToRgb(c2);
+    const r = Math.round(lerp(rgb1.r, rgb2.r, t));
+    const g = Math.round(lerp(rgb1.g, rgb2.g, t));
+    const b = Math.round(lerp(rgb1.b, rgb2.b, t));
+    return normalizeHexColor('#' + r.toString(16).padStart(2,'0') + g.toString(16).padStart(2,'0') + b.toString(16).padStart(2,'0'));
+  }
+
+  function getSkyGradientColors(height){
+    const h = Math.max(0, height);
+    let base;
+    if (h <= SKY_STAGE1){
+      base = lerpColor(COLOR_SUNSET, COLOR_LIGHT, h / SKY_STAGE1);
+    } else if (h <= SKY_STAGE2){
+      base = lerpColor(COLOR_LIGHT, COLOR_DARK, (h - SKY_STAGE1) / (SKY_STAGE2 - SKY_STAGE1));
+    } else if (h <= SKY_STAGE3){
+      base = lerpColor(COLOR_DARK, COLOR_SPACE, (h - SKY_STAGE2) / (SKY_STAGE3 - SKY_STAGE2));
+    } else {
+      base = lerpColor(COLOR_SPACE, '#000000', Math.min(1, (h - SKY_STAGE3) / 4000));
+    }
+
+    return {
+      top: lerpColor(base, '#ffffff', 0.06),
+      bottom: lerpColor(base, '#000000', 0.12)
+    };
+  }
+
+  function makeFlake(randomY){
+    return {
+      x: Math.random() * canvasW,
+      y: randomY ? Math.random() * canvasH : -randInt(0, canvasH * 0.3),
+      vy: 0.4 + Math.random() * 0.8,
+      amp: 0.6 + Math.random() * 1.2,
+      phase: Math.random() * Math.PI * 2,
+      speed: 0.015 + Math.random() * 0.02,
+      size: 15 + Math.random() * 6,
+      char: '❄️'
+    };
+  }
+
+  function initSnow(){
+    snowflakes = [];
+    for (let i = 0; i < SNOW_COUNT; i++) snowflakes.push(makeFlake(true));
+  }
+
+  function updateSnow(dt60){
+    for (const f of snowflakes){
+      f.y += f.vy * dt60;
+      f.phase += f.speed * dt60;
+      f.x += Math.sin(f.phase) * f.amp * dt60;
+
+      if (f.y - f.size > canvasH){
+        f.y = -f.size - randInt(0, canvasH * 0.3);
+        f.x = Math.random() * canvasW;
+      }
+      if (f.x < -20) f.x += canvasW + 40;
+      else if (f.x > canvasW + 20) f.x -= canvasW + 40;
+    }
+  }
+
+  function drawSnow(){
+    if (!snowflakes.length) return;
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.globalAlpha = 0.9;
+    for (const f of snowflakes){
+      ctx.font = `${f.size}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",system-ui`;
+      ctx.fillText(f.char, f.x, f.y);
+    }
+    ctx.restore();
+  }
+
+  function makeStar(randomY){
+    return {
+      x: Math.random() * canvasW,
+      y: randomY ? Math.random() * canvasH * 0.8 : randInt(0, canvasH * 0.8),
+      phase: Math.random() * Math.PI * 2,
+      speed: 0.02 + Math.random() * 0.03,
+      size: 12 + Math.random() * 5,
+      char: Math.random() < 0.5 ? '✨' : '⭐️'
+    };
+  }
+
+  function initStars(){
+    stars = [];
+    for (let i = 0; i < STAR_COUNT; i++) stars.push(makeStar(true));
+  }
+
+  function updateStars(dt60){
+    for (const s of stars) s.phase += s.speed * dt60;
+  }
+
+  function drawStars(){
+    if (!stars.length) return;
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (const s of stars){
+      const flicker = (Math.sin(s.phase) * 0.5 + 0.5);
+      ctx.globalAlpha = 0.25 + flicker * 0.75;
+      ctx.font = `${s.size}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",system-ui`;
+      ctx.fillText(s.char, s.x, s.y);
+    }
+    ctx.restore();
+  }
+
+  function spawnSparks(worldX, worldY){
+    const count = 24;
+    for (let i = 0; i < count; i++){
+      const isRight = i < count / 2;
+      const minDeg = isRight ? 20  : 160;
+      const maxDeg = isRight ? 70  : 200;
+      const angle = (minDeg + Math.random() * (maxDeg - minDeg)) * Math.PI / 180;
+      const speed = 2.5 + Math.random() * 2.5;
+      sparks.push({ x: worldX, y: worldY, vx: Math.cos(angle)*speed, vy: Math.sin(angle)*speed, life: 28, maxLife: 28 });
+    }
+  }
+
+  function updateSparks(dt60){
+    const gravity = 0.12;
+    for (const s of sparks){
+      s.x += s.vx * dt60;
+      s.y += s.vy * dt60;
+      s.vy += gravity * dt60;
+      s.life -= dt60;
+    }
+    sparks = sparks.filter(s => s.life > 0);
+  }
+
+  function drawSparks(){
+    if (!sparks.length) return;
+    ctx.save();
+    for (const s of sparks){
+      const t = s.life / s.maxLife;
+      ctx.globalAlpha = Math.max(0, Math.min(1, t));
+      const radius = 5 + 5 * (1 - t);
+      const screenX = s.x;
+      const screenY = s.y + offsetY;
+      ctx.fillStyle = '#ffd54f';
+      ctx.beginPath();
+      ctx.arc(screenX, screenY, radius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function spawnFallingBlocks(blocks){
+    for (const b of blocks){
+      fallingBlocks.push({
+        x: b.x + b.w / 2,
+        y: b.y + b.h / 2,
+        w: b.w,
+        h: b.h,
+        img: b.img,
+        color: b.color,
+        vy: 3 + Math.random() * 2,
+        vx: (Math.random() - 0.5) * 1.5,
+        alpha: 1,
+        rot: (Math.random() - 0.5) * 0.4,
+        vrot: (Math.random() - 0.5) * 0.08
+      });
+    }
+  }
+
+  function updateFallingBlocks(dt60){
+    const gravity = 0.18;
+    for (const fb of fallingBlocks){
+      fb.x += fb.vx * dt60;
+      fb.y += fb.vy * dt60;
+      fb.vy += gravity * dt60;
+      fb.rot += fb.vrot * dt60;
+      fb.alpha -= 0.015 * dt60;
+    }
+    fallingBlocks = fallingBlocks.filter(fb => fb.alpha > 0 && (fb.y + offsetY) < canvasH + 200);
+  }
+
+  function drawFallingBlocks(){
+    if (!fallingBlocks.length) return;
+    ctx.save();
+    for (const fb of fallingBlocks){
+      ctx.globalAlpha = Math.max(0, Math.min(1, fb.alpha));
+      const screenX = fb.x;
+      const screenY = fb.y + offsetY;
+
+      ctx.save();
+      ctx.translate(screenX, screenY);
+      ctx.rotate(fb.rot);
+
+      if (fb.img){
+        ctx.drawImage(fb.img, -fb.w/2, -fb.h/2, fb.w, fb.h);
+      } else {
+        ctx.fillStyle = fb.color || '#66bb6a';
+        ctx.fillRect(-fb.w/2, -fb.h/2, fb.w, fb.h);
+      }
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
+  function randomFloorType(){ return FLOOR_TYPES[randInt(0, FLOOR_TYPES.length - 1)]; }
+
+  function randomBaseFloorType(){
+    const pool = FLOOR_TYPES.filter(t => t.id !== 'B');
+    return pool[randInt(0, pool.length - 1)];
+  }
+
+  function randomFloorImage(typeId){
+    const arr = FLOOR_IMAGES[typeId] || [];
+    if (!arr.length) return null;
+    let lastIdx = LAST_SKIN_IDX[typeId];
+    let idx = randInt(0, arr.length - 1);
+    if (arr.length > 1 && idx === lastIdx) idx = (idx + 1) % arr.length;
+    LAST_SKIN_IDX[typeId] = idx;
+    return arr[idx];
+  }
+
+  function createBlock(type, x, y){
+    return { typeId:type.id, x, y, w:type.w, h:type.h, img: randomFloorImage(type.id), color:'#66bb6a', isBonus:false, isAntiBonus:false };
+  }
+
+  function updateLoaderProgress(loaded, total){
+    const p = total ? Math.round(loaded / total * 100) : 100;
+    loaderBarFill.style.width = p + '%';
+  }
+
+  /* ==========================
+     ✅ PRELOAD строго .webp + BASE
+     ========================== */
+  function loadImageOnce(url, timeout=9000){
+    return new Promise((resolve, reject) => {
+      let done=false;
+      const img = new Image();
+      img.decoding = 'async';
+      img.loading = 'eager';
+
+      const to = setTimeout(()=>{
+        if(!done){
+          done=true;
+          img.src='';
+          reject(new Error('timeout'));
+        }
+      }, timeout);
+
+      img.onload = ()=>{ if(done) return; done=true; clearTimeout(to); resolve(img); };
+      img.onerror = ()=>{ if(done) return; done=true; clearTimeout(to); reject(new Error('error')); };
+
+      img.src = url;
+    });
+  }
+
+  async function tryLoadWebp(fileName, bust=false){
+    const url = asset(fileName) + (bust ? `?v=${Date.now()}` : '');
     try{
-      out[f] = await loadImage(assetUrl(f));
+      const img = await loadImageOnce(url, 9000);
+      return { ok:true, img, url };
     }catch(e){
-      alert('НЕ НАЙДЕН ФАЙЛ:\n' + e);
-      throw e;
+      return { ok:false, url };
     }
-    loaded++;
-    barFill.style.width = Math.round(loaded/files.length*100)+'%';
-  }
-  return out;
-}
-
-/* =====================================================
-   GAME ASSETS
-   ===================================================== */
-let IMG = {};
-
-const FLOOR_TYPES = [
-  { id:'A', prefix:'TipA-', n:2, w:155, h:121 },
-  { id:'B', prefix:'TipB-', n:3, w:190, h:149 },
-  { id:'C', prefix:'TipC-', n:2, w:116, h:186 },
-  { id:'D', prefix:'TipD-', n:4, w:100, h:100 },
-  { id:'F', prefix:'TipF-', n:3, w:119, h:205 }
-];
-
-const FLOOR_IMG = {};
-
-/* =====================================================
-   GAME (МИНИМАЛЬНО, НО СТАБИЛЬНО)
-   ===================================================== */
-let blocks = [];
-let cur = null;
-let dir = 1;
-let speed = 2.5;
-let dropping = false;
-
-function spawn(){
-  const t = FLOOR_TYPES[Math.floor(Math.random()*FLOOR_TYPES.length)];
-  const imgs = FLOOR_IMG[t.id];
-  const img = imgs[Math.floor(Math.random()*imgs.length)];
-
-  cur = {
-    x: dir>0 ? -t.w : W,
-    y: blocks.length ? blocks[blocks.length-1].y - t.h - 40 : H - t.h,
-    w:t.w,
-    h:t.h,
-    img
-  };
-  dir *= -1;
-}
-
-function update(){
-  ctx.clearRect(0,0,W,H);
-
-  for(const b of blocks){
-    ctx.drawImage(b.img,b.x,b.y,b.w,b.h);
   }
 
-  if(cur){
-    if(!dropping){
-      cur.x += speed * dir;
-      if(cur.x<0 || cur.x+cur.w>W) dir*=-1;
-    }else{
-      cur.y += 6;
-      const last = blocks[blocks.length-1];
-      if(!last || cur.y+cur.h>=last.y){
-        cur.y = last ? last.y-cur.h : cur.y;
-        blocks.push(cur);
-        cur=null;
-        dropping=false;
-        spawn();
+  function buildAssetFiles(){
+    const files = [];
+    for (const t of FLOOR_TYPES){
+      for (let i=1;i<=t.variants;i++){
+        files.push(`${t.filePrefix}${i}.webp`);
       }
     }
-    ctx.drawImage(cur.img,cur.x,cur.y,cur.w,cur.h);
+    files.push('background.webp','bonus.webp','coil.webp','bag1.webp','bag2.webp','gирlanda.webp'.replace('г','g')); // на всякий, но не обязателен
+    // ↑ если у тебя точно girlanda.webp (латиницей) — он будет как "girlanda.webp", ниже добавим корректно:
+    files.pop();
+    files.push('girlanda.webp');
+    return files;
   }
 
-  requestAnimationFrame(update);
-}
+  async function preloadAllAssets(onProgress){
+    const files = buildAssetFiles();
+    const total = files.length;
+    let loaded = 0;
 
-canvas.addEventListener('pointerdown',()=>{
-  if(cur && !dropping) dropping=true;
-});
+    const CONCURRENCY = IS_MOBILE ? 4 : 10;
+    let idx = 0;
 
-/* =====================================================
-   BOOT
-   ===================================================== */
-(async ()=>{
-  try{
-    IMG = await loadAssets();
+    const results = {};
+    const missing = [];
 
-    for(const t of FLOOR_TYPES){
-      FLOOR_IMG[t.id]=[];
-      for(let i=1;i<=t.n;i++){
-        FLOOR_IMG[t.id].push(IMG[`${t.prefix}${i}.webp`]);
+    const workers = new Array(CONCURRENCY).fill(0).map(async ()=>{
+      while (idx < total){
+        const i = idx++;
+        const file = files[i];
+
+        // сначала без bust, потом с bust
+        let res = await tryLoadWebp(file, false);
+        if (!res.ok) res = await tryLoadWebp(file, true);
+
+        results[file] = res.ok ? res.img : null;
+        if (!res.ok) missing.push(res.url);
+
+        loaded++;
+        onProgress?.(loaded, total, file, res.ok);
+      }
+    });
+
+    await Promise.all(workers);
+    return { results, missing };
+  }
+
+  function assignLoadedAssets(results){
+    for (const t of FLOOR_TYPES){
+      FLOOR_IMAGES[t.id] = [];
+      for (let i=1;i<=t.variants;i++){
+        const key = `${t.filePrefix}${i}.webp`;
+        const img = results[key] || null;
+        if (img) FLOOR_IMAGES[t.id].push(img);
       }
     }
 
-    loader.remove();
-    spawn();
-    update();
-  }catch(e){
-    console.error(e);
+    backgroundImg = results['background.webp'] || null;
+    bonusImg      = results['bonus.webp'] || null;
+    coilImg       = results['coil.webp'] || null;
+    bagFrontImg   = results['bag1.webp'] || null;
+    bagBackImg    = results['bag2.webp'] || null;
   }
-})();
+
+  function drawBackground(worldHeight){
+    const { top, bottom } = getSkyGradientColors(worldHeight);
+    const grad = ctx.createLinearGradient(0, 0, 0, canvasH);
+    grad.addColorStop(0, top);
+    grad.addColorStop(1, bottom);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, canvasW, canvasH);
+
+    if (backgroundImg){
+      const imgAspect = backgroundImg.width / backgroundImg.height;
+      const targetW = canvasW;
+      const targetH = targetW / imgAspect;
+      const worldBottom = backgroundWorldBottom;
+      const worldTop = worldBottom - targetH;
+      const screenY = worldTop + offsetY;
+      ctx.drawImage(backgroundImg, 0, screenY, targetW, targetH);
+    }
+  }
+
+  function getBagWorldRect(){
+    const w = canvasW * BAG_W_RATIO;
+    const h = canvasH * BAG_H_RATIO;
+    const x = (canvasW - w) / 2 + BAG_OFFSET_X;
+    const offsetYScaled = (BAG_OFFSET_Y / 600) * canvasH;
+    const y = FLOOR_Y - h + offsetYScaled;
+    return { x, y, w, h };
+  }
+
+  function drawBagBack(){
+    if (!bagBackImg) return;
+    const r = getBagWorldRect();
+    const sy = r.y + offsetY;
+    if (sy > canvasH + 200 || sy + r.h < -200) return;
+    ctx.drawImage(bagBackImg, r.x, sy, r.w, r.h);
+  }
+
+  function drawBagFront(){
+    if (!bagFrontImg) return;
+    const r = getBagWorldRect();
+    const sy = r.y + offsetY;
+    if (sy > canvasH + 200 || sy + r.h < -200) return;
+    ctx.drawImage(bagFrontImg, r.x, sy, r.w, r.h);
+  }
+
+  function resetGame(){
+    tower = [];
+    current = null;
+    moveSpeed = MOVE_SPEED_START;
+    speedGrowth = BASE_SPEED_GROWTH;
+    direction = 1;
+    isDropping = false;
+    gameOver = false;
+    gameStarted = false;
+    score = 0;
+
+    swayActive = false;
+    swayPhase = 0;
+    swayAmplitude = 0;
+
+    offsetY = 0;
+    targetOffsetY = 0;
+    worldHeight = 0;
+
+    comboCount = 0;
+    comboFloat = null;
+    sparks = [];
+    pendingBonus = false;
+    fallingBlocks = [];
+
+    initSnow();
+    initStars();
+
+    const baseType = randomBaseFloorType();
+    const baseX = (canvasW - baseType.w) / 2;
+    const baseY = FLOOR_Y - baseType.h;
+    const base = createBlock(baseType, baseX, baseY);
+    base.color = '#4caf50';
+    tower.push(base);
+
+    backgroundWorldBottom = canvasH;
+    spawnBlock();
+  }
+
+  function spawnBlock(){
+    const last = tower[tower.length - 1];
+    const GAP_ABOVE = Math.min(BLOCK_HEIGHT * 8, canvasH * 0.55);
+
+    let block;
+
+    if (pendingBonus){
+      const type = { id: 'BONUS', w: BONUS_W, h: BONUS_H };
+      const startY = last.y - GAP_ABOVE - type.h;
+
+      direction = Math.random() < 0.5 ? 1 : -1;
+      const startX = direction === 1 ? -type.w : canvasW;
+
+      block = { typeId:'BONUS', x:startX, y:startY, w:type.w, h:type.h, img:bonusImg||null, color:'#ffd700', isBonus:true, isAntiBonus:false };
+      pendingBonus = false;
+    } else {
+      const useAnti = Math.random() < ANTI_BONUS_CHANCE;
+
+      if (useAnti){
+        const type = { id: 'ANTI', w: COIL_W, h: COIL_H };
+        const startY = last.y - GAP_ABOVE - type.h;
+
+        direction = Math.random() < 0.5 ? 1 : -1;
+        const startX = direction === 1 ? -type.w : canvasW;
+
+        block = { typeId:'ANTI', x:startX, y:startY, w:type.w, h:type.h, img:coilImg||null, color:'#ff5252', isBonus:false, isAntiBonus:true };
+      } else {
+        const type = randomFloorType();
+        const startY = last.y - GAP_ABOVE - type.h;
+
+        block = createBlock(type, 0, startY);
+        direction = Math.random() < 0.5 ? 1 : -1;
+        block.x = direction === 1 ? -block.w : canvasW;
+      }
+    }
+
+    current = block;
+    isDropping = false;
+  }
+
+  function applyAntiBonusHit(){
+    const maxRemovable = tower.length - 1;
+    if (maxRemovable <= 0) return;
+
+    const toRemove = Math.min(3, maxRemovable);
+    const removedBlocks = [];
+    let removedHeight = 0;
+
+    for (let i = 0; i < toRemove; i++){
+      const b = tower.pop();
+      removedBlocks.push(b);
+      removedHeight += b.h;
+    }
+
+    spawnFallingBlocks(removedBlocks);
+
+    score = Math.max(0, tower.length - 1);
+    targetOffsetY = Math.max(0, targetOffsetY - removedHeight);
+    worldHeight   = Math.max(0, worldHeight   - removedHeight);
+
+    comboCount = 0;
+    comboFloat = null;
+    updateSwayParameters();
+  }
+
+  function handlePerfectHit(landed){
+    comboCount++;
+
+    const sparkX = landed.x + landed.w / 2;
+    const sparkY = landed.y + landed.h * 0.7;
+    spawnSparks(sparkX, sparkY);
+
+    if (comboCount >= 2){
+      comboFloat = { x: landed.x + landed.w + 10, y: landed.y + landed.h * 0.2, text: 'x' + comboCount, life: 40, maxLife: 40 };
+    } else {
+      comboFloat = null;
+    }
+
+    swayAmplitude *= 0.7;
+    speedGrowth = Math.max(MIN_SPEED_GROWTH, speedGrowth * 0.85);
+
+    if (comboCount > 0 && comboCount % 5 === 0){
+      pendingBonus = true;
+    }
+  }
+
+  function handleNormalHit(){
+    comboCount = 0;
+    comboFloat = null;
+    speedGrowth = lerp(speedGrowth, BASE_SPEED_GROWTH, 0.25);
+  }
+
+  function baseLandBlock(){
+    const last = tower[tower.length - 1];
+
+    const lastLeft = last.x;
+    const lastRight = last.x + last.w;
+    const curCenter = current.x + current.w / 2;
+    const lastCenter = (lastLeft + lastRight) / 2;
+
+    const hit = curCenter >= lastLeft && curCenter <= lastRight;
+
+    if (current.isAntiBonus){
+      if (!hit){
+        current = null; isDropping = false; spawnBlock(); return;
+      } else {
+        applyAntiBonusHit();
+        current = null; isDropping = false; spawnBlock(); return;
+      }
+    }
+
+    if (!hit){
+      spawnFallingBlocks([current]);
+      current = null;
+      isDropping = false;
+      gameOver = true;
+      return;
+    }
+
+    current.y = last.y - current.h;
+    tower.push(current);
+
+    const isPerfect = Math.abs(curCenter - lastCenter) <= PERFECT_TOLERANCE;
+    if (isPerfect) handlePerfectHit(current);
+    else handleNormalHit();
+
+    score = tower.length - 1;
+    moveSpeed += speedGrowth;
+
+    updateSwayParameters();
+
+    targetOffsetY += current.h;
+    worldHeight   += current.h;
+
+    if (current.isBonus){
+      let extraHeight = 0;
+      for (let i = 1; i <= 3; i++){
+        const y = current.y - current.h * i;
+        tower.push({ typeId:'BONUS', x: current.x, y, w: current.w, h: current.h, img: current.img, color: current.color, isBonus:true, isAntiBonus:false });
+        score++;
+        extraHeight += current.h;
+      }
+      targetOffsetY += extraHeight;
+      worldHeight   += extraHeight;
+      updateSwayParameters();
+    }
+
+    spawnBlock();
+  }
+
+  function landBlock(){
+    baseLandBlock();
+    if (gameOver){
+      gameStarted = false;
+      showGameOverMenu();
+      trySubmitScore();
+    }
+  }
+
+  function updateSwayParameters(){
+    const base = tower[0];
+    const top = tower[tower.length - 1];
+
+    const baseCenter = base.x + base.w / 2;
+    const topCenter = top.x + top.w / 2;
+    const lean = topCenter - baseCenter;
+    const absLean = Math.abs(lean);
+
+    if (absLean > LEAN_TO_SWAY){
+      swayActive = true;
+      swayAmplitude = Math.min(MAX_SWAY, absLean * 0.25 * 1.2);
+    } else {
+      swayActive = false;
+      swayAmplitude = 0;
+      swayPhase = 0;
+    }
+  }
+
+  function drawTower(swayOffset){
+    for (const block of tower){
+      const screenY = block.y + offsetY;
+      if (screenY + block.h < -100 || screenY > canvasH + 100) continue;
+
+      const x = block.x + swayOffset;
+      const y = screenY;
+
+      if (block.img) ctx.drawImage(block.img, x, y, block.w, block.h);
+      else { ctx.fillStyle = block.color || '#66bb6a'; ctx.fillRect(x, y, block.w, block.h); }
+    }
+  }
+
+  function drawCurrent(swayOffset){
+    if (!current) return;
+    const screenY = current.y + offsetY;
+    if (screenY + current.h < -100 || screenY > canvasH + 100) return;
+
+    const x = current.x + swayOffset;
+    const y = screenY;
+
+    if (current.img) ctx.drawImage(current.img, x, y, current.w, current.h);
+    else { ctx.fillStyle = current.color || '#66bb6a'; ctx.fillRect(x, y, current.w, current.h); }
+  }
+
+  function drawScore(){
+    ctx.save();
+    ctx.font = '18px Futura, Arial, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = (score >= 50) ? '#ffffff' : '#000000';
+    ctx.fillText('Подарков собрано: ' + score, 8, 6);
+    ctx.restore();
+  }
+
+  function updateComboFloat(dt60){
+    if (!comboFloat) return;
+    comboFloat.life -= dt60;
+    comboFloat.y -= 0.2 * dt60;
+    if (comboFloat.life <= 0) comboFloat = null;
+  }
+
+  function drawComboFloat(swayOffset){
+    if (!comboFloat) return;
+
+    const t = comboFloat.life / comboFloat.maxLife;
+    const alpha = Math.max(0, Math.min(1, t));
+
+    const screenX = comboFloat.x + swayOffset;
+    const screenY = comboFloat.y + offsetY;
+
+    ctx.save();
+    ctx.font = '26px Futura, Arial, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+    ctx.lineWidth = 3;
+    ctx.strokeText(comboFloat.text, screenX, screenY);
+
+    ctx.fillStyle = '#ffd54f';
+    ctx.fillText(comboFloat.text, screenX, screenY);
+    ctx.restore();
+  }
+
+  function showGameOverMenu(){
+    gameOverOverlay.style.display = 'flex';
+    gameOverScoreEl.textContent = 'Твой результат: ' + score + ' подарков';
+  }
+
+  function hideGameOverMenu(){
+    gameOverOverlay.style.display = 'none';
+  }
+
+  let isPaused = false;
+  let lastFrameTs = 0;
+
+  function update(ts){
+    if (isPaused){
+      lastFrameTs = ts || lastFrameTs;
+      requestAnimationFrame(update);
+      return;
+    }
+
+    if (!lastFrameTs) lastFrameTs = ts;
+    const dtSec = Math.max(0, (ts - lastFrameTs) / 1000);
+    lastFrameTs = ts;
+
+    let dt60 = dtSec * 60;
+    dt60 = Math.max(0, Math.min(2.5, dt60));
+
+    ctx.clearRect(0, 0, canvasW, canvasH);
+
+    if (!gameOver) offsetY = lerpDt(offsetY, targetOffsetY, 0.18, dt60);
+
+    if (worldHeight < SKY_STAGE3) updateSnow(dt60);
+    else updateStars(dt60);
+
+    updateSparks(dt60);
+    updateFallingBlocks(dt60);
+    updateComboFloat(dt60);
+
+    let swayOffset = 0;
+    if (swayActive && !gameOver){
+      swayPhase += 0.05 * dt60;
+      swayOffset = Math.sin(swayPhase) * swayAmplitude;
+    }
+
+    drawBackground(worldHeight);
+
+    if (worldHeight < SKY_STAGE3) drawSnow();
+    else drawStars();
+
+    drawSparks();
+    drawFallingBlocks();
+
+    drawBagBack();
+
+    drawTower(swayOffset);
+    drawCurrent(swayOffset);
+    drawScore();
+    drawComboFloat(swayOffset);
+
+    drawBagFront();
+
+    if (!gameOver && current){
+      const last = tower[tower.length - 1];
+
+      if (!isDropping){
+        current.x += (moveSpeed * direction) * dt60;
+        if (current.x <= 0){ current.x = 0; direction = 1; }
+        else if (current.x + current.w >= canvasW){ current.x = canvasW - current.w; direction = -1; }
+      } else {
+        current.y += FALL_SPEED * dt60;
+        if (current.y + current.h >= last.y){
+          current.y = last.y - current.h;
+          landBlock();
+        }
+      }
+    }
+
+    requestAnimationFrame(update);
+  }
+
+  function handleDrop(){
+    if (gameOver) return;
+    if (current && !isDropping) isDropping = true;
+  }
+
+  function handleStart(){
+    if (gameStarted) return;
+    gameStarted = true;
+    gameOver = false;
+    startOverlay.style.display = 'none';
+    hideGameOverMenu();
+  }
+
+  function onTap(){
+    if (!gameStarted) handleStart();
+    if (gameOver){
+      resetGame();
+      gameOver = false;
+      hideGameOverMenu();
+      handleStart();
+    } else {
+      handleDrop();
+    }
+  }
+
+  window.addEventListener('keydown', (e)=>{
+    if (e.code === 'Space' || e.code === 'ArrowDown'){
+      e.preventDefault();
+      onTap();
+    }
+  });
+
+  canvas.addEventListener('pointerdown', (e)=>{ e.preventDefault(); onTap(); }, { passive:false });
+  startOverlay.addEventListener('pointerdown', (e)=>{ e.preventDefault(); onTap(); }, { passive:false });
+
+  btnRestart.addEventListener('pointerdown', (e)=>{ e.stopPropagation(); }, { passive:true });
+  btnLeaderboard.addEventListener('pointerdown', (e)=>{ e.stopPropagation(); }, { passive:true });
+  gameOverOverlay.addEventListener('pointerdown', (e)=>{ e.stopPropagation(); }, { passive:true });
+
+  btnRestart.addEventListener('click', (e)=>{
+    e.stopPropagation();
+    resetGame();
+    gameOver = false;
+    hideGameOverMenu();
+    handleStart();
+  });
+
+  btnLeaderboard.addEventListener('click', async (e)=>{
+    e.stopPropagation();
+    openLeaderboard();
+  });
+
+  (function tgReady(){
+    try{
+      if (Telegram?.WebApp){
+        Telegram.WebApp.ready();
+        Telegram.WebApp.expand?.();
+      }
+    }catch(e){}
+  })();
+
+  document.addEventListener('visibilitychange', ()=>{
+    isPaused = document.hidden;
+    if (!document.hidden){
+      lastFrameTs = 0;
+    }
+  });
+
+  /* ==========================
+     ✅ Leaderboard JSONP
+     ========================== */
+  function getTgUser(){ const u = Telegram?.WebApp?.initDataUnsafe?.user; return u || null; }
+  function getTgId(){ const u = getTgUser(); return u?.id ? String(u.id) : ''; }
+  function getTgUsername(){
+    const u = getTgUser();
+    if (!u) return '';
+    if (u.username) return '@' + u.username;
+    const fn = u.first_name || '', ln = u.last_name || '';
+    const combo = (fn + ' ' + ln).trim();
+    return combo || 'Игрок';
+  }
+
+  function submitScoreJSONP({ username, score, tg_id }){
+    return new Promise((resolve, reject) => {
+      const cbName = '__hp_submit_cb_' + Date.now() + '_' + Math.floor(Math.random()*9999);
+      const script = document.createElement('script');
+
+      window[cbName] = function(resp){
+        try{ resolve(resp); }
+        finally { try{ delete window[cbName]; }catch(_){} script.remove(); }
+      };
+
+      const params = new URLSearchParams({ username: username, score: String(score), tg_id: tg_id || '' });
+      script.src = LB_URL + '?' + params.toString() + '&callback=' + cbName;
+      script.onerror = function(){
+        try{ delete window[cbName]; }catch(_){}
+        script.remove();
+        reject(new Error('JSONP send failed'));
+      };
+
+      document.body.appendChild(script);
+    });
+  }
+
+  function fetchLeaderboardJSONP(){
+    return new Promise((resolve, reject) => {
+      const cbName = '__hp_top_cb_' + Date.now() + '_' + Math.floor(Math.random()*9999);
+      const script = document.createElement('script');
+
+      window[cbName] = function(resp){
+        try{ resolve(resp); }
+        finally { try{ delete window[cbName]; }catch(_){} script.remove(); }
+      };
+
+      script.src = LB_URL + '?callback=' + cbName;
+      script.onerror = function(){
+        try{ delete window[cbName]; }catch(_){}
+        script.remove();
+        reject(new Error('JSONP fetch failed'));
+      };
+
+      document.body.appendChild(script);
+    });
+  }
+
+  function warmLb(){
+    try{
+      const s = document.createElement('script');
+      s.src = LB_URL + '?_warm=1';
+      s.async = true;
+      s.onload = ()=>s.remove();
+      s.onerror = ()=>s.remove();
+      document.body.appendChild(s);
+    }catch(e){}
+  }
+
+  function trySubmitScore(){
+    try{
+      submitScoreJSONP({
+        username: getTgUsername() || 'Игрок',
+        score: score,
+        tg_id: getTgId() || ''
+      }).catch(()=>{});
+    }catch(e){}
+  }
+
+  async function openLeaderboard(){
+    lbList.innerHTML = '';
+    lbLoading.style.display = 'block';
+    lbModal.hidden = false;
+
+    try{
+      const data = await fetchLeaderboardJSONP();
+      const top = (data.top || []).slice(0, 10);
+
+      lbList.innerHTML = '';
+      if (!top.length){
+        lbList.innerHTML = '<li style="padding:8px;color:#000">Пока пусто. Стань первым(ой) ✨</li>';
+      } else {
+        top.forEach((row, idx)=>{
+          const li = document.createElement('li');
+          li.className = 'lb-item';
+          if (idx < 5) li.classList.add('lb-top5');
+          li.innerHTML = `<span>#${idx+1} ${row.username || 'Игрок'}</span><strong>${row.score}</strong>`;
+          lbList.appendChild(li);
+        });
+      }
+    }catch(e){
+      lbList.innerHTML = '<li style="padding:8px;color:#a00">Не удалось загрузить таблицу лидеров.</li>';
+    }finally{
+      lbLoading.style.display = 'none';
+    }
+  }
+
+  lbClose.addEventListener('click', ()=>{ lbModal.hidden = true; });
+  lbModal.addEventListener('click', (e)=>{ if (e.target === lbModal) lbModal.hidden = true; });
+
+  /* ==========================
+     Boot
+     ========================== */
+  async function boot(){
+    doResizeCanvas();
+    requestAnimationFrame(update);
+
+    loaderOverlay.style.display = 'flex';
+    updateLoaderProgress(0, 100);
+
+    try{
+      const { results, missing } = await preloadAllAssets((loaded, total)=>{
+        updateLoaderProgress(loaded, total);
+      });
+
+      assignLoadedAssets(results);
+
+      // ✅ если не загрузились Tip'ы — показываем точные URL
+      const essentialMissing = missing.filter(u => /Tip[A-Z]-\d+\.webp/i.test(u));
+      const essentialOk = ['A','B','C','D','F'].every(id => (FLOOR_IMAGES[id]||[]).length > 0);
+
+      if (!essentialOk){
+        alert(
+          'Не удалось загрузить Tip*.webp. Вот URL, которые НЕ открылись:\n\n' +
+          essentialMissing.slice(0, 40).map(x => `- ${x}`).join('\n') +
+          (essentialMissing.length > 40 ? '\n\n...и ещё ' + (essentialMissing.length - 40) + ' шт.' : '')
+        );
+      }
+
+      warmLb();
+
+      loaderOverlay.style.display = 'none';
+      startOverlay.style.display = 'flex';
+
+      resetGame();
+    }catch(err){
+      console.error('Preload failed', err);
+      alert('Ошибка загрузки ассетов. Проверь, что файлы реально лежат рядом с index.html и названия совпадают (TipA-1.webp и т.д.).');
+    }
+  }
+
+  boot();
 </script>
 </body>
 </html>
+
+</html>
+
