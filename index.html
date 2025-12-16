@@ -344,62 +344,6 @@
   let lastCssW = 0, lastCssH = 0;
   let resizeTimer = 0;
 
-  /* ======== (осторожно) подготовка изображений под текущий DPR/scale ======== */
-  let assetsPrepared = false;
-  async function prepareImageSmart(img, targetW, targetH){
-    try{
-      if (!img) return null;
-      if (!('createImageBitmap' in window)) return img;
-
-      const w = Math.max(1, Math.round(targetW));
-      const h = Math.max(1, Math.round(targetH));
-
-      // если целевой размер очень близок — не трогаем
-      if (Math.abs((img.width||0) - w) < 4 && Math.abs((img.height||0) - h) < 4) return img;
-
-      // createImageBitmap с resize (быстрее отрисовка, меньше нагрузка)
-      const bmp = await createImageBitmap(img, {
-        resizeWidth: w,
-        resizeHeight: h,
-        resizeQuality: 'high'
-      });
-      return bmp;
-    } catch (e){
-      return img;
-    }
-  }
-
-  async function prepareAssetsForCurrentScale(){
-    // вызывать только после загрузки ассетов и после doResizeCanvas()
-    // делаем мягко: если не поддерживается/ошибка — ничего страшного
-    const px = DPR * CAMERA_SCALE;
-
-    // фон не трогаем (он часто меняется по размеру и дорогой), оставляем оригинал
-    // backgroundImg = await prepareImageSmart(backgroundImg, canvasW * px, canvasH * px);
-
-    // bag
-    const bagW = (canvasW * BAG_W_RATIO) * px;
-    const bagH = (canvasH * BAG_H_RATIO) * px;
-    bagFrontImg = await prepareImageSmart(bagFrontImg, bagW, bagH);
-    bagBackImg  = await prepareImageSmart(bagBackImg,  bagW, bagH);
-
-    // bonus/coil
-    bonusImg = await prepareImageSmart(bonusImg, BONUS_W * px, BONUS_H * px);
-    coilImg  = await prepareImageSmart(coilImg,  COIL_W  * px, COIL_H  * px);
-
-    // floors
-    for (const t of FLOOR_TYPES){
-      const tw = t.w * px;
-      const th = t.h * px;
-      const arr = FLOOR_IMAGES[t.id];
-      for (let i = 0; i < arr.length; i++){
-        arr[i] = await prepareImageSmart(arr[i], tw, th);
-      }
-    }
-
-    assetsPrepared = true;
-  }
-
   function doResizeCanvas(){
     const vw = window.innerWidth;
     const vh = Math.min(
@@ -449,21 +393,6 @@
 
     if (snowflakes.length) initSnow();
     if (stars.length) initStars();
-
-    // если ассеты уже загружены — пере-подготовку делаем осторожно и нечасто
-    if (assetsLoaded){
-      // на резайзе не будем делать синхронно (может лагнуть): отложим
-      schedulePrepareAssets();
-    }
-  }
-
-  let prepareTimer = 0;
-  function schedulePrepareAssets(){
-    clearTimeout(prepareTimer);
-    prepareTimer = setTimeout(async ()=>{
-      // перестраховка: не дергать лишний раз
-      await prepareAssetsForCurrentScale();
-    }, 250);
   }
 
   function scheduleResize(){
@@ -476,7 +405,6 @@
 
   window.addEventListener('touchmove', e => { e.preventDefault(); }, { passive:false });
 
-  /* ✅ СКОРОСТИ ЧЕРЕЗ deltaTime */
   const FALL_SPEED = 9;
   const MOVE_SPEED_START = 2.5;
 
@@ -757,7 +685,7 @@
     // ✅ Tip B никогда не будет самым первым этажом
     let t = randomFloorType();
     let guard = 0;
-    while (t && t.id === 'B' && guard++ < 20){
+    while (t && t.id === 'B' && guard++ < 50){
       t = randomFloorType();
     }
     return t || FLOOR_TYPES[0];
@@ -800,8 +728,7 @@
     loaderBarFill.style.width = p + '%';
   }
 
-  /* ✅ Изменение 1: параллельная загрузка с лимитом */
-  let assetsLoaded = false;
+  /* ✅ Быстрая параллельная загрузка (без createImageBitmap, чтобы не зависало) */
   async function loadAllAssetsWithProgress(){
     const EXT_ORDER = ['.webp', '.png', '.jpg', '.jpeg'];
 
@@ -825,12 +752,12 @@
     const totalAssets = tasks.length;
     let loadedAssets = 0;
 
-    const concurrency = IS_MOBILE ? 6 : 10;
+    const concurrency = IS_MOBILE ? 4 : 8;
 
     async function worker(){
-      while (tasks.length){
+      while (true){
         const job = tasks.shift();
-        if (!job) return;
+        if (!job) break;
         try{
           await job();
         } finally {
@@ -843,11 +770,6 @@
     const workers = [];
     for (let i = 0; i < concurrency; i++) workers.push(worker());
     await Promise.all(workers);
-
-    assetsLoaded = true;
-
-    // ✅ (осторожно) пробуем “подготовить” изображения под текущий DPR/scale
-    await prepareAssetsForCurrentScale();
   }
 
   function drawBackground(worldHeight){
@@ -925,8 +847,7 @@
     initSnow();
     initStars();
 
-    // ✅ первый этаж не Tip B
-    const baseType = randomBaseFloorType();
+    const baseType = randomBaseFloorType(); // ✅ не Tip B
     const baseX = (canvasW - baseType.w) / 2;
     const baseY = FLOOR_Y - baseType.h;
     const base = createBlock(baseType, baseX, baseY);
@@ -940,10 +861,7 @@
   function spawnBlock(){
     const last = tower[tower.length - 1];
 
-    /* ✅ ГДЕ РЕГУЛИРОВАТЬ ВЫСОТУ ПОЯВЛЕНИЯ БЛОКА:
-       меньше число -> блок появляется ниже
-       больше число -> блок появляется выше
-    */
+    /* ✅ ГДЕ РЕГУЛИРОВАТЬ ВЫСОТУ ПОЯВЛЕНИЯ БЛОКА */
     const GAP_ABOVE = Math.min(BLOCK_HEIGHT * 8, canvasH * 0.55);
 
     let block;
@@ -1007,7 +925,7 @@
     updateSwayParameters();
   }
 
-  function handlePerfectHit(landed, below){
+  function handlePerfectHit(landed){
     comboCount++;
 
     const sparkX = landed.x + landed.w / 2;
@@ -1065,7 +983,7 @@
     tower.push(current);
 
     const isPerfect = Math.abs(curCenter - lastCenter) <= PERFECT_TOLERANCE;
-    if (isPerfect) handlePerfectHit(current, last);
+    if (isPerfect) handlePerfectHit(current);
     else handleNormalHit();
 
     score = tower.length - 1;
@@ -1195,7 +1113,6 @@
   }
 
   let isPaused = false;
-
   let lastFrameTs = 0;
 
   function update(ts){
@@ -1335,7 +1252,6 @@
 
   async function boot(){
     doResizeCanvas();
-
     requestAnimationFrame(update);
 
     await loadAllAssetsWithProgress();
