@@ -39,22 +39,22 @@
     /* ✅ header уменьшен ~на 20% по высоте */
     header{
       text-align:center;
-      margin-bottom:6px; /* было 8px */
+      margin-bottom:6px;
       width:100%;
       user-select:none;
       position:relative;
       z-index:2;
     }
     header img{
-      max-height:67px; /* было 84px */
+      max-height:67px;
       display:block;
       margin:0 auto;
     }
     header .slogan{
       color:#000;
-      margin-top:6px; /* было 8px */
+      margin-top:6px;
       font-weight:700;
-      font-size:0.92em; /* легкое уменьшение */
+      font-size:0.92em;
       line-height:1.1;
     }
 
@@ -190,21 +190,6 @@
       .overlay-start .rules{ font-size:13px; }
     }
 
-    .garland-strip{
-      position:fixed;
-      top:0;
-      bottom:0;
-      width:min(22vw, 150px);
-      pointer-events:none;
-      z-index:1;
-      background-image:url('girlanda.webp');
-      background-repeat:repeat-y;
-      background-position:center top;
-      background-size:100% auto;
-    }
-    .garland-strip.left{ left:0; }
-    .garland-strip.right{ right:0; transform:scaleX(-1); }
-
     .loader-overlay{
       position:absolute;
       inset:0;
@@ -239,9 +224,6 @@
   </style>
 </head>
 <body>
-
-<div class="garland-strip left"></div>
-<div class="garland-strip right"></div>
 
 <header>
   <img src="logo.png" alt="logo" decoding="async">
@@ -302,8 +284,12 @@
   let DPR = 1;
   let canvasW = 0, canvasH = 0;
 
-  /* ✅ масштаб камеры “отдалён” на 20% */
-  const CAMERA_SCALE = 0.76; /* было 0.95 */
+  /* ✅ ГДЕ РЕГУЛИРОВАТЬ МАСШТАБ КАМЕРЫ:
+     меньше число -> сильнее "отдаляем" (видно больше мира)
+     больше число -> "приближаем" (объекты крупнее)
+  */
+  const CAMERA_SCALE = 0.76;
+
   const BLOCK_HEIGHT = 30;
 
   const PERFECT_TOLERANCE = 8;
@@ -420,14 +406,20 @@
 
   window.addEventListener('touchmove', e => { e.preventDefault(); }, { passive:false });
 
-  const FALL_SPEED = 9;
-  const MOVE_SPEED_START = 2.5;
+  /* ✅ СКОРОСТИ ТЕПЕРЬ НОРМАЛИЗОВАНЫ ЧЕРЕЗ deltaTime
+     Эти значения воспринимай как "на 60fps"
+  */
+  const FALL_SPEED = 9;           // падение (эквивалент px/кадр @60fps)
+  const MOVE_SPEED_START = 2.5;   // движение по X (эквивалент px/кадр @60fps)
 
   const BASE_SPEED_GROWTH = 0.20;
   const MIN_SPEED_GROWTH  = 0.08;
 
   const LEAN_TO_SWAY = 40;
   const MAX_SWAY = 35;
+
+  /* ✅ Красный контур для антибонуса */
+  const ANTI_OUTLINE_COLOR = 'rgba(255, 60, 60, 0.95)';
 
   let tower = [];
   let current = null;
@@ -484,6 +476,12 @@
 
   function lerp(a, b, t){ return a + (b - a) * t; }
 
+  /* deltaTime-friendly lerp: сохраняет "ощущение" при разном FPS */
+  function lerpDt(a, b, k, dt60){
+    const t = 1 - Math.pow(1 - k, dt60);
+    return a + (b - a) * t;
+  }
+
   function lerpColor(c1, c2, t){
     t = Math.max(0, Math.min(1, t));
     c1 = normalizeHexColor(c1);
@@ -534,11 +532,11 @@
     for (let i = 0; i < SNOW_COUNT; i++) snowflakes.push(makeFlake(true));
   }
 
-  function updateSnow(){
+  function updateSnow(dt60){
     for (const f of snowflakes){
-      f.y += f.vy;
-      f.phase += f.speed;
-      f.x += Math.sin(f.phase) * f.amp;
+      f.y += f.vy * dt60;
+      f.phase += f.speed * dt60;
+      f.x += Math.sin(f.phase) * f.amp * dt60;
 
       if (f.y - f.size > canvasH){
         f.y = -f.size - randInt(0, canvasH * 0.3);
@@ -578,8 +576,8 @@
     for (let i = 0; i < STAR_COUNT; i++) stars.push(makeStar(true));
   }
 
-  function updateStars(){
-    for (const s of stars) s.phase += s.speed;
+  function updateStars(dt60){
+    for (const s of stars) s.phase += s.speed * dt60;
   }
 
   function drawStars(){
@@ -608,13 +606,13 @@
     }
   }
 
-  function updateSparks(){
+  function updateSparks(dt60){
     const gravity = 0.12;
     for (const s of sparks){
-      s.x += s.vx;
-      s.y += s.vy;
-      s.vy += gravity;
-      s.life--;
+      s.x += s.vx * dt60;
+      s.y += s.vy * dt60;
+      s.vy += gravity * dt60;
+      s.life -= dt60;
     }
     sparks = sparks.filter(s => s.life > 0);
   }
@@ -624,7 +622,7 @@
     ctx.save();
     for (const s of sparks){
       const t = s.life / s.maxLife;
-      ctx.globalAlpha = t;
+      ctx.globalAlpha = Math.max(0, Math.min(1, t));
       const radius = 5 + 5 * (1 - t);
       const screenX = s.x;
       const screenY = s.y + offsetY;
@@ -654,14 +652,14 @@
     }
   }
 
-  function updateFallingBlocks(){
+  function updateFallingBlocks(dt60){
     const gravity = 0.18;
     for (const fb of fallingBlocks){
-      fb.x += fb.vx;
-      fb.y += fb.vy;
-      fb.vy += gravity;
-      fb.rot += fb.vrot;
-      fb.alpha -= 0.015;
+      fb.x += fb.vx * dt60;
+      fb.y += fb.vy * dt60;
+      fb.vy += gravity * dt60;
+      fb.rot += fb.vrot * dt60;
+      fb.alpha -= 0.015 * dt60;
     }
     fallingBlocks = fallingBlocks.filter(fb => fb.alpha > 0 && (fb.y + offsetY) < canvasH + 200);
   }
@@ -798,6 +796,14 @@
     ctx.drawImage(bagFrontImg, r.x, sy, r.w, r.h);
   }
 
+  function drawAntiOutline(x, y, w, h){
+    ctx.save();
+    ctx.strokeStyle = ANTI_OUTLINE_COLOR;
+    ctx.lineWidth = Math.max(2, Math.min(6, w * 0.03));
+    ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
+    ctx.restore();
+  }
+
   function resetGame(){
     tower = [];
     current = null;
@@ -840,7 +846,11 @@
   function spawnBlock(){
     const last = tower[tower.length - 1];
 
-    /* ✅ высота появления блока: было 14, стало 12 (+ ограничение по высоте окна) */
+    /* ✅ ГДЕ РЕГУЛИРОВАТЬ ВЫСОТУ ПОЯВЛЕНИЯ БЛОКА (чтобы не улетал за верх экрана):
+       было: 12
+       хочешь ниже -> уменьши 12 (например 10)
+       хочешь выше -> увеличь 12 (например 14)
+    */
     const GAP_ABOVE = Math.min(BLOCK_HEIGHT * 12, canvasH * 0.55);
 
     let block;
@@ -1026,6 +1036,10 @@
 
       if (block.img) ctx.drawImage(block.img, x, y, block.w, block.h);
       else { ctx.fillStyle = block.color || '#66bb6a'; ctx.fillRect(x, y, block.w, block.h); }
+
+      if (block.isAntiBonus){
+        drawAntiOutline(x, y, block.w, block.h);
+      }
     }
   }
 
@@ -1039,6 +1053,10 @@
 
     if (current.img) ctx.drawImage(current.img, x, y, current.w, current.h);
     else { ctx.fillStyle = current.color || '#66bb6a'; ctx.fillRect(x, y, current.w, current.h); }
+
+    if (current.isAntiBonus){
+      drawAntiOutline(x, y, current.w, current.h);
+    }
   }
 
   function drawScore(){
@@ -1051,10 +1069,10 @@
     ctx.restore();
   }
 
-  function updateComboFloat(){
+  function updateComboFloat(dt60){
     if (!comboFloat) return;
-    comboFloat.life--;
-    comboFloat.y -= 0.2;
+    comboFloat.life -= dt60;
+    comboFloat.y -= 0.2 * dt60;
     if (comboFloat.life <= 0) comboFloat = null;
   }
 
@@ -1093,26 +1111,38 @@
 
   let isPaused = false;
 
-  function update(){
+  /* ✅ deltaTime */
+  let lastFrameTs = 0;
+
+  function update(ts){
     if (isPaused){
+      lastFrameTs = ts || lastFrameTs;
       requestAnimationFrame(update);
       return;
     }
 
+    if (!lastFrameTs) lastFrameTs = ts;
+    const dtSec = Math.max(0, (ts - lastFrameTs) / 1000);
+    lastFrameTs = ts;
+
+    /* dt60 = сколько "60fps-кадров" прошло за этот кадр */
+    let dt60 = dtSec * 60;
+    dt60 = Math.max(0, Math.min(2.5, dt60)); // clamp, чтобы не улетало при лаге
+
     ctx.clearRect(0, 0, canvasW, canvasH);
 
-    if (!gameOver) offsetY = lerp(offsetY, targetOffsetY, 0.18);
+    if (!gameOver) offsetY = lerpDt(offsetY, targetOffsetY, 0.18, dt60);
 
-    if (worldHeight < SKY_STAGE3) updateSnow();
-    else updateStars();
+    if (worldHeight < SKY_STAGE3) updateSnow(dt60);
+    else updateStars(dt60);
 
-    updateSparks();
-    updateFallingBlocks();
-    updateComboFloat();
+    updateSparks(dt60);
+    updateFallingBlocks(dt60);
+    updateComboFloat(dt60);
 
     let swayOffset = 0;
     if (swayActive && !gameOver){
-      swayPhase += 0.05;
+      swayPhase += 0.05 * dt60;
       swayOffset = Math.sin(swayPhase) * swayAmplitude;
     }
 
@@ -1137,11 +1167,11 @@
       const last = tower[tower.length - 1];
 
       if (!isDropping){
-        current.x += moveSpeed * direction;
+        current.x += (moveSpeed * direction) * dt60;
         if (current.x <= 0){ current.x = 0; direction = 1; }
         else if (current.x + current.w >= canvasW){ current.x = canvasW - current.w; direction = -1; }
       } else {
-        current.y += FALL_SPEED;
+        current.y += FALL_SPEED * dt60;
         if (current.y + current.h >= last.y){
           current.y = last.y - current.h;
           landBlock();
@@ -1215,10 +1245,15 @@
 
   document.addEventListener('visibilitychange', ()=>{
     isPaused = document.hidden;
+    if (!document.hidden){
+      lastFrameTs = 0; // чтобы не было огромного dt после возврата
+    }
   });
 
   async function boot(){
     doResizeCanvas();
+
+    /* важный момент: запускаем rAF с timestamp */
     requestAnimationFrame(update);
 
     await loadAllAssetsWithProgress();
@@ -1233,3 +1268,4 @@
 </script>
 </body>
 </html>
+
