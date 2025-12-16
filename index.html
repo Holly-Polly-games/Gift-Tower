@@ -240,7 +240,7 @@
     </div>
   </div>
 
-  <div id="startOverlay" class="overlay-start" style="display:none;">
+  <div id="startOverlay" class="overlay-start">
     <div class="panel">
       <div class="msg">Тапни, чтобы начать строить башню</div>
 
@@ -268,6 +268,15 @@
 </div>
 
 <script>
+  // ✅ Service Worker (ускоряет повторные запуски из кеша)
+  (function registerSW(){
+    try{
+      if ('serviceWorker' in navigator){
+        navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(()=>{});
+      }
+    }catch(e){}
+  })();
+
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d', { alpha:true, desynchronized:true });
 
@@ -290,6 +299,7 @@
   const CAMERA_SCALE = 0.73;
 
   const BLOCK_HEIGHT = 30;
+
   const PERFECT_TOLERANCE = 8;
   const ANTI_BONUS_CHANCE = 0.10;
 
@@ -314,6 +324,7 @@
   let backgroundImg = null;
   let bonusImg = null;
   let coilImg = null;
+
   let bagFrontImg = null;
   let bagBackImg  = null;
 
@@ -400,8 +411,10 @@
 
   window.addEventListener('resize', scheduleResize);
   window.addEventListener('orientationchange', ()=>{ setTimeout(scheduleResize, 120); });
+
   window.addEventListener('touchmove', e => { e.preventDefault(); }, { passive:false });
 
+  /* ✅ Скорости нормализованы через deltaTime (значения = ощущение на 60fps) */
   const FALL_SPEED = 9;
   const MOVE_SPEED_START = 2.5;
 
@@ -466,6 +479,7 @@
 
   function lerp(a, b, t){ return a + (b - a) * t; }
 
+  /* deltaTime-friendly lerp */
   function lerpDt(a, b, k, dt60){
     const t = 1 - Math.pow(1 - k, dt60);
     return a + (b - a) * t;
@@ -682,16 +696,6 @@
 
   function randomFloorType(){ return FLOOR_TYPES[randInt(0, FLOOR_TYPES.length - 1)]; }
 
-  function randomBaseFloorType(){
-    // ✅ Tip B никогда не будет самым первым этажом
-    let t = randomFloorType();
-    let guard = 0;
-    while (t && t.id === 'B' && guard++ < 50){
-      t = randomFloorType();
-    }
-    return t || FLOOR_TYPES[0];
-  }
-
   function randomFloorImage(typeId){
     const arr = FLOOR_IMAGES[typeId] || [];
     if (!arr.length) return null;
@@ -713,8 +717,10 @@
         if (idx >= exts.length){ resolve(null); return; }
         const src = baseName + exts[idx++];
         const img = new Image();
-        img.decoding = 'async';
-        img.onload = ()=>resolve(img);
+        img.onload = async ()=>{
+          try{ if (img.decode) await img.decode(); }catch(e){}
+          resolve(img);
+        };
         img.onerror = ()=>tryNext();
         img.src = src;
       }
@@ -727,72 +733,53 @@
     loaderBarFill.style.width = p + '%';
   }
 
-  // ✅ Быстрый старт: грузим минимум и запускаем, остальное догружаем в фоне
-  async function loadCriticalAssets(){
+  // ✅ параллельная загрузка ассетов (быстрее, чем await в цикле)
+  async function loadAllAssetsWithProgress(){
     const EXT_ORDER = ['.webp', '.png', '.jpg', '.jpeg'];
 
-    // Критично: фон/мешки/coil/bonus + по 1 варианту каждого типа пола
     const tasks = [];
 
     for (const t of FLOOR_TYPES){
-      tasks.push(async ()=>{
-        const img = await loadWithFallback(`${t.filePrefix}1`, EXT_ORDER);
-        if (img) FLOOR_IMAGES[t.id].push(img);
-      });
-    }
-
-    tasks.push(async ()=>{ backgroundImg = await loadWithFallback('background', EXT_ORDER) || null; });
-    tasks.push(async ()=>{ bonusImg      = await loadWithFallback('bonus', EXT_ORDER)      || null; });
-    tasks.push(async ()=>{ coilImg       = await loadWithFallback('coil', EXT_ORDER)       || null; });
-    tasks.push(async ()=>{ bagBackImg    = await loadWithFallback('bag2', EXT_ORDER)       || null; });
-    tasks.push(async ()=>{ bagFrontImg   = await loadWithFallback('bag1', EXT_ORDER)       || null; });
-
-    const total = tasks.length;
-    let done = 0;
-
-    // Чуть ограничим параллельность в WebView, чтобы не душить декодер
-    const concurrency = IS_MOBILE ? 3 : 6;
-
-    const queue = tasks.slice();
-    async function worker(){
-      while (queue.length){
-        const job = queue.shift();
-        if (!job) break;
-        await job().catch(()=>{});
-        done++;
-        updateLoaderProgress(done, total);
-      }
-    }
-
-    await Promise.all(Array.from({length:concurrency}, worker));
-  }
-
-  async function loadRemainingAssetsInBackground(){
-    const EXT_ORDER = ['.webp', '.png', '.jpg', '.jpeg'];
-    const tasks = [];
-
-    for (const t of FLOOR_TYPES){
-      for (let i = 2; i <= t.variants; i++){
-        tasks.push(async ()=>{
-          const img = await loadWithFallback(`${t.filePrefix}${i}`, EXT_ORDER);
-          if (img) FLOOR_IMAGES[t.id].push(img);
+      for (let i = 1; i <= t.variants; i++){
+        tasks.push({
+          key: `floor:${t.id}:${i}`,
+          run: async ()=>{
+            const img = await loadWithFallback(`${t.filePrefix}${i}`, EXT_ORDER);
+            if (img) FLOOR_IMAGES[t.id].push(img);
+          }
         });
       }
     }
 
-    const concurrency = IS_MOBILE ? 2 : 4;
-    const queue = tasks.slice();
+    tasks.push({ key:'background', run: async ()=>{ const img = await loadWithFallback('background', EXT_ORDER); if (img) backgroundImg = img; }});
+    tasks.push({ key:'bonus',      run: async ()=>{ const img = await loadWithFallback('bonus', EXT_ORDER);      if (img) bonusImg = img; }});
+    tasks.push({ key:'coil',       run: async ()=>{ const img = await loadWithFallback('coil', EXT_ORDER);       if (img) coilImg = img; }});
+    tasks.push({ key:'bag2',       run: async ()=>{ const img = await loadWithFallback('bag2', EXT_ORDER);       if (img) bagBackImg = img; }});
+    tasks.push({ key:'bag1',       run: async ()=>{ const img = await loadWithFallback('bag1', EXT_ORDER);       if (img) bagFrontImg = img; }});
+
+    const totalAssets = tasks.length;
+    let loadedAssets = 0;
+
+    function oneDone(){
+      loadedAssets++;
+      updateLoaderProgress(loadedAssets, totalAssets);
+    }
+
+    // ограничение параллелизма, чтобы не душить сеть/память (и Telegram WebView)
+    const CONCURRENCY = 6;
+    let cursor = 0;
 
     async function worker(){
-      while (queue.length){
-        const job = queue.shift();
-        if (!job) break;
-        await job().catch(()=>{});
+      while (cursor < tasks.length){
+        const i = cursor++;
+        try{ await tasks[i].run(); }catch(e){}
+        oneDone();
       }
     }
 
-    // запускаем, но не await — чтобы не блокировать игру
-    Promise.all(Array.from({length:concurrency}, worker)).catch(()=>{});
+    const workers = [];
+    for (let i = 0; i < CONCURRENCY; i++) workers.push(worker());
+    await Promise.all(workers);
   }
 
   function drawBackground(worldHeight){
@@ -870,7 +857,10 @@
     initSnow();
     initStars();
 
-    const baseType = randomBaseFloorType(); // ✅ не Tip B
+    // ✅ первый (базовый) этаж НЕ может быть Tip B
+    let baseType = randomFloorType();
+    while (baseType && baseType.id === 'B') baseType = randomFloorType();
+
     const baseX = (canvasW - baseType.w) / 2;
     const baseY = FLOOR_Y - baseType.h;
     const base = createBlock(baseType, baseX, baseY);
@@ -884,7 +874,10 @@
   function spawnBlock(){
     const last = tower[tower.length - 1];
 
-    /* ✅ ГДЕ РЕГУЛИРОВАТЬ ВЫСОТУ ПОЯВЛЕНИЯ БЛОКА */
+    /* ✅ ГДЕ РЕГУЛИРОВАТЬ ВЫСОТУ ПОЯВЛЕНИЯ БЛОКА:
+       меньше -> блок появляется ниже (виднее на телефоне)
+       больше -> выше
+    */
     const GAP_ABOVE = Math.min(BLOCK_HEIGHT * 8, canvasH * 0.55);
 
     let block;
@@ -948,7 +941,7 @@
     updateSwayParameters();
   }
 
-  function handlePerfectHit(landed){
+  function handlePerfectHit(landed, below){
     comboCount++;
 
     const sparkX = landed.x + landed.w / 2;
@@ -1006,7 +999,7 @@
     tower.push(current);
 
     const isPerfect = Math.abs(curCenter - lastCenter) <= PERFECT_TOLERANCE;
-    if (isPerfect) handlePerfectHit(current);
+    if (isPerfect) handlePerfectHit(current, last);
     else handleNormalHit();
 
     score = tower.length - 1;
@@ -1178,10 +1171,12 @@
     drawFallingBlocks();
 
     drawBagBack();
+
     drawTower(swayOffset);
     drawCurrent(swayOffset);
     drawScore();
     drawComboFloat(swayOffset);
+
     drawBagFront();
 
     if (!gameOver && current){
@@ -1266,27 +1261,24 @@
 
   document.addEventListener('visibilitychange', ()=>{
     isPaused = document.hidden;
-    if (!document.hidden) lastFrameTs = 0;
+    if (!document.hidden){
+      lastFrameTs = 0;
+    }
   });
 
   async function boot(){
     doResizeCanvas();
     requestAnimationFrame(update);
 
-    // 1) грузим минимум для старта
-    await loadCriticalAssets();
+    await loadAllAssetsWithProgress();
 
     loaderOverlay.style.display = 'none';
     startOverlay.style.display = 'flex';
 
     resetGame();
-
-    // 2) остальное — фоном
-    loadRemainingAssetsInBackground();
   }
 
   boot();
 </script>
 </body>
 </html>
-
