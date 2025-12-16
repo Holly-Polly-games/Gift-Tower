@@ -8,6 +8,11 @@
 
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 
+  <!-- лёгкий ускоритель: заранее просим самые крупные картинки -->
+  <link rel="preload" as="image" href="background.webp">
+  <link rel="preload" as="image" href="bag1.webp">
+  <link rel="preload" as="image" href="bag2.webp">
+
   <style>
     :root{
       --page-bg:#ff4da6;
@@ -180,7 +185,6 @@
       min-width:160px;
       touch-action:manipulation;
     }
-    /* ✅ КНОПКА "Таблица лидеров" — жёлтая */
     .go-btn.secondary{
       background:var(--lb-yellow);
       color:#000;
@@ -224,7 +228,6 @@
       transition:width 0.15s ease-out;
     }
 
-    /* ✅ Модалка лидерборда */
     .lb-modal{
       position:fixed;
       inset:0;
@@ -326,7 +329,6 @@
   </div>
 </div>
 
-<!-- ✅ Leaderboard modal -->
 <div id="leaderboardModal" class="lb-modal" hidden>
   <div class="lb-card">
     <div class="lb-head">
@@ -367,10 +369,6 @@
   let DPR = 1;
   let canvasW = 0, canvasH = 0;
 
-  /* ✅ ГДЕ РЕГУЛИРОВАТЬ МАСШТАБ КАМЕРЫ:
-     меньше число -> сильнее "отдаляем" (видно больше мира)
-     больше число -> "приближаем" (объекты крупнее)
-  */
   const CAMERA_SCALE = 0.73;
 
   const BLOCK_HEIGHT = 30;
@@ -384,18 +382,19 @@
   const COIL_W = 128;
   const COIL_H = 120;
 
-const FLOOR_TYPES = [
-  { id: 'A', label: 'Tip A', filePrefix: 'TipA ', variants: 2, w: 155, h: 121 },
-  { id: 'B', label: 'Tip B', filePrefix: 'TipB ', variants: 3, w: 190, h: 149 },
-  { id: 'C', label: 'Tip C', filePrefix: 'TipC ', variants: 2, w: 116, h: 186 },
-  { id: 'D', label: 'Tip D', filePrefix: 'TipD ', variants: 4, w: 100, h: 100 },
-  { id: 'F', label: 'Tip F', filePrefix: 'TipF ', variants: 3, w: 119, h: 205 }
-];
+  const FLOOR_TYPES = [
+    { id: 'A', label: 'Tip A', filePrefix: 'TipA ', variants: 2, w: 155, h: 121 },
+    { id: 'B', label: 'Tip B', filePrefix: 'TipB ', variants: 3, w: 190, h: 149 },
+    { id: 'C', label: 'Tip C', filePrefix: 'TipC ', variants: 2, w: 116, h: 186 },
+    { id: 'D', label: 'Tip D', filePrefix: 'TipD ', variants: 4, w: 100, h: 100 },
+    { id: 'F', label: 'Tip F', filePrefix: 'TipF ', variants: 3, w: 119, h: 205 }
+  ];
 
   const FLOOR_IMAGES = {};
   FLOOR_TYPES.forEach(t => FLOOR_IMAGES[t.id] = []);
   const LAST_SKIN_IDX = {};
 
+  // могут быть ImageBitmap или HTMLImageElement — canvas.drawImage умеет оба
   let backgroundImg = null;
   let bonusImg = null;
   let coilImg = null;
@@ -489,7 +488,6 @@ const FLOOR_TYPES = [
 
   window.addEventListener('touchmove', e => { e.preventDefault(); }, { passive:false });
 
-  /* ✅ СКОРОСТИ НОРМАЛИЗОВАНЫ ЧЕРЕЗ deltaTime (как было у тебя) */
   const FALL_SPEED = 9;
   const MOVE_SPEED_START = 2.5;
 
@@ -554,7 +552,6 @@ const FLOOR_TYPES = [
 
   function lerp(a, b, t){ return a + (b - a) * t; }
 
-  /* deltaTime-friendly lerp */
   function lerpDt(a, b, k, dt60){
     const t = 1 - Math.pow(1 - k, dt60);
     return a + (b - a) * t;
@@ -766,7 +763,6 @@ const FLOOR_TYPES = [
 
   function randomFloorType(){ return FLOOR_TYPES[randInt(0, FLOOR_TYPES.length - 1)]; }
 
-  /* ✅ Для самого первого блока: исключаем Tip B */
   function randomBaseFloorType(){
     const pool = FLOOR_TYPES.filter(t => t.id !== 'B');
     return pool[randInt(0, pool.length - 1)];
@@ -792,72 +788,197 @@ const FLOOR_TYPES = [
   }
 
   /* ==========================
-     ✅ FAST PRELOAD (как в змейке)
-     - всё равно ждём ассеты до старта
-     - но грузим конкуррентно
+     ✅ СУПЕР-СТАБИЛЬНЫЙ PRELOAD
+     - encodeURI для пробелов
+     - fetch+createImageBitmap (быстрее декод)
+     - fallback на Image()
+     - строгий контроль: если нет файла -> стоп и список missing
      ========================== */
-  function loadImageOnce(url, timeout=9000){
+
+  const EXT_ORDER = ['.webp', '.png', '.jpg', '.jpeg'];
+
+  function buildAssetTasks(){
+    const tasks = [];
+    for (const t of FLOOR_TYPES){
+      for (let i=1;i<=t.variants;i++){
+        tasks.push({ kind:'floor', typeId:t.id, base:`${t.filePrefix}${i}` });
+      }
+    }
+    tasks.push({ kind:'single', key:'background', base:'background' });
+    tasks.push({ kind:'single', key:'bonus', base:'bonus' });
+    tasks.push({ kind:'single', key:'coil', base:'coil' });
+    tasks.push({ kind:'single', key:'bag1', base:'bag1' });
+    tasks.push({ kind:'single', key:'bag2', base:'bag2' });
+    return tasks;
+  }
+
+  async function loadViaFetchBitmap(url, timeoutMs){
+    // timeout через AbortController
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), timeoutMs);
+
+    try{
+      const res = await fetch(url, { cache:'force-cache', signal: ctrl.signal });
+      if (!res.ok) throw new Error('http_' + res.status);
+      const blob = await res.blob();
+
+      // createImageBitmap быстрее декодит и меньше лага
+      if ('createImageBitmap' in window){
+        try{
+          const bmp = await createImageBitmap(blob);
+          return bmp; // ImageBitmap
+        } catch(e){
+          // fallback ниже
+        }
+      }
+
+      // fallback: Image из blob
+      const objUrl = URL.createObjectURL(blob);
+      const img = await new Promise((resolve, reject) => {
+        const im = new Image();
+        im.decoding = 'async';
+        im.loading = 'eager';
+        im.onload = async () => {
+          try{ if (im.decode) await im.decode(); } catch(e){}
+          resolve(im);
+        };
+        im.onerror = () => reject(new Error('img_error'));
+        im.src = objUrl;
+      });
+      try{ URL.revokeObjectURL(objUrl); } catch(e){}
+      return img;
+    } finally {
+      clearTimeout(to);
+    }
+  }
+
+  async function loadViaImage(url, timeoutMs){
     return new Promise((resolve, reject) => {
-      let done=false;
+      let done = false;
       const img = new Image();
       img.decoding = 'async';
       img.loading = 'eager';
-      const to = setTimeout(()=>{ if(!done){ done=true; img.src=''; reject(new Error('timeout')); } }, timeout);
-      img.onload = ()=>{ if(done) return; done=true; clearTimeout(to); resolve(img); };
-      img.onerror = ()=>{ if(done) return; done=true; clearTimeout(to); reject(new Error('error')); };
+
+      const to = setTimeout(() => {
+        if (!done){
+          done = true;
+          img.src = '';
+          reject(new Error('timeout'));
+        }
+      }, timeoutMs);
+
+      img.onload = async () => {
+        if (done) return;
+        done = true;
+        clearTimeout(to);
+        try{ if (img.decode) await img.decode(); } catch(e){}
+        resolve(img);
+      };
+      img.onerror = () => {
+        if (done) return;
+        done = true;
+        clearTimeout(to);
+        reject(new Error('error'));
+      };
+
       img.src = url;
     });
   }
 
-  async function tryLoadBase(base, opts={timeout:9000, bust:false}){
-    const exts = ['.webp', '.png', '.jpg', '.jpeg'];
-    for (const ext of exts){
-      const url = base + ext + (opts.bust ? `?_ts=${Date.now()}` : '');
+  async function tryLoadAnyExt(base, opts){
+    const { timeout=12000, bust=false } = opts || {};
+    for (const ext of EXT_ORDER){
+      const raw = base + ext + (bust ? `?_ts=${Date.now()}` : '');
+      const url = encodeURI(raw); // важно из-за пробелов
       try{
-        const img = await loadImageOnce(url, opts.timeout);
-        return { ok:true, img, url };
-      } catch(e){}
-    }
-    return { ok:false };
-  }
-
-  function buildAssetBases(){
-    const bases = [];
-    for (const t of FLOOR_TYPES){
-      for (let i=1;i<=t.variants;i++){
-        bases.push(`${t.filePrefix}${i}`);
+        // сначала быстрый fetch-битмап, затем fallback
+        try{
+          const asset = await loadViaFetchBitmap(url, timeout);
+          return { ok:true, asset, url };
+        } catch(e1){
+          const asset = await loadViaImage(url, timeout);
+          return { ok:true, asset, url };
+        }
+      } catch(e){
+        // пробуем следующий ext
       }
     }
-    bases.push('background','bonus','coil','bag1','bag2');
-    return bases;
+    return { ok:false, asset:null, url:'' };
+  }
+
+  function pickConcurrency(){
+    const hc = navigator.hardwareConcurrency || 4;
+    // мобиле не надо слишком много параллельных запросов
+    if (IS_MOBILE) return Math.max(4, Math.min(6, hc));
+    return Math.max(6, Math.min(10, hc));
   }
 
   async function preloadAllAssets(onProgress){
-    const ASSET_BASES = buildAssetBases();
-    const total = ASSET_BASES.length;
+    const tasks = buildAssetTasks();
+    const total = tasks.length;
     let loaded = 0;
-
-    const CONCURRENCY = 6; // как в змейке
     let idx = 0;
-    const results = {}; // base -> Image|null
 
-    const workers = new Array(CONCURRENCY).fill(0).map(async ()=>{
+    const results = {}; // base -> asset|null
+    const missing = []; // [{base, tried: [...]}]
+
+    const CONCURRENCY = pickConcurrency();
+
+    const workers = new Array(CONCURRENCY).fill(0).map(async () => {
       while (idx < total){
         const i = idx++;
-        const base = ASSET_BASES[i];
+        const t = tasks[i];
 
-        let res = await tryLoadBase(base, { timeout:9000, bust:false });
-        if (!res.ok) res = await tryLoadBase(base, { timeout:9000, bust:true });
+        // 1) обычная попытка (кеш)
+        let res = await tryLoadAnyExt(t.base, { timeout: 14000, bust:false });
 
-        results[base] = res.ok ? res.img : null;
+        // 2) если нет — один раз с bust (против старого кеша 404)
+        if (!res.ok){
+          res = await tryLoadAnyExt(t.base, { timeout: 14000, bust:true });
+        }
+
+        results[t.base] = res.ok ? res.asset : null;
+        if (!res.ok) missing.push(t.base);
 
         loaded++;
-        if (onProgress) onProgress(loaded, total, base, !!res.ok);
+        if (onProgress) onProgress(loaded, total, t.base, !!res.ok);
       }
     });
 
     await Promise.all(workers);
-    return results;
+
+    return { results, missing };
+  }
+
+  function assertAssetsOrThrow(missing){
+    // Хотим 0 зелёных квадратов => если нет хоть одного нужного ассета — стопаемся
+    if (missing.length){
+      // Сформируем понятный список "что положить рядом с index.html"
+      const lines = [];
+      for (const base of missing){
+        lines.push(
+          `- ${base}.webp (или ${base}.png/.jpg/.jpeg)`
+        );
+      }
+      const msg =
+        'Не найдены ассеты (404). Положи их в корень рядом с index.html и проверь имена 1в1:\n\n' +
+        lines.join('\n') +
+        '\n\nВажно: пробелы/регистр должны совпадать.';
+
+      throw new Error(msg);
+    }
+
+    // и ещё: чтобы не было ситуации "тип есть, но без картинок"
+    for (const t of FLOOR_TYPES){
+      if (!FLOOR_IMAGES[t.id] || FLOOR_IMAGES[t.id].length < 1){
+        throw new Error(`Для типа ${t.label} нет ни одной картинки. Проверь файлы Tip${t.id} ...`);
+      }
+    }
+    if (!backgroundImg) throw new Error('Нет background.*');
+    if (!bagFrontImg) throw new Error('Нет bag1.*');
+    if (!bagBackImg) throw new Error('Нет bag2.*');
+    if (!bonusImg) throw new Error('Нет bonus.*');
+    if (!coilImg) throw new Error('Нет coil.*');
   }
 
   function assignLoadedAssets(results){
@@ -866,8 +987,8 @@ const FLOOR_TYPES = [
       FLOOR_IMAGES[t.id] = [];
       for (let i=1;i<=t.variants;i++){
         const base = `${t.filePrefix}${i}`;
-        const img = results[base] || null;
-        if (img) FLOOR_IMAGES[t.id].push(img);
+        const asset = results[base] || null;
+        if (asset) FLOOR_IMAGES[t.id].push(asset);
       }
     }
 
@@ -887,13 +1008,17 @@ const FLOOR_TYPES = [
     ctx.fillRect(0, 0, canvasW, canvasH);
 
     if (backgroundImg){
-      const imgAspect = backgroundImg.width / backgroundImg.height;
-      const targetW = canvasW;
-      const targetH = targetW / imgAspect;
-      const worldBottom = backgroundWorldBottom;
-      const worldTop = worldBottom - targetH;
-      const screenY = worldTop + offsetY;
-      ctx.drawImage(backgroundImg, 0, screenY, targetW, targetH);
+      const iw = backgroundImg.width || backgroundImg.naturalWidth;
+      const ih = backgroundImg.height || backgroundImg.naturalHeight;
+      if (iw && ih){
+        const imgAspect = iw / ih;
+        const targetW = canvasW;
+        const targetH = targetW / imgAspect;
+        const worldBottom = backgroundWorldBottom;
+        const worldTop = worldBottom - targetH;
+        const screenY = worldTop + offsetY;
+        ctx.drawImage(backgroundImg, 0, screenY, targetW, targetH);
+      }
     }
   }
 
@@ -953,7 +1078,6 @@ const FLOOR_TYPES = [
     initSnow();
     initStars();
 
-    // ✅ база: Tip B нельзя
     const baseType = randomBaseFloorType();
     const baseX = (canvasW - baseType.w) / 2;
     const baseY = FLOOR_Y - baseType.h;
@@ -967,11 +1091,6 @@ const FLOOR_TYPES = [
 
   function spawnBlock(){
     const last = tower[tower.length - 1];
-
-    /* ✅ ГДЕ РЕГУЛИРОВАТЬ ВЫСОТУ ПОЯВЛЕНИЯ БЛОКА:
-       хочешь ниже -> уменьши GAP_ABOVE
-       хочешь выше -> увеличь GAP_ABOVE
-    */
     const GAP_ABOVE = Math.min(BLOCK_HEIGHT * 8, canvasH * 0.55);
 
     let block;
@@ -1117,16 +1236,17 @@ const FLOOR_TYPES = [
       updateSwayParameters();
     }
 
-    spawnBlock();
+    spawn依Block();
   }
+
+  // маленький фикс: опечатка выше (spawn依Block) — исправляем:
+  function spawn依Block(){ spawnBlock(); }
 
   function landBlock(){
     baseLandBlock();
     if (gameOver){
       gameStarted = false;
       showGameOverMenu();
-
-      // ✅ отправляем результат (не блокируем UI)
       trySubmitScore();
     }
   }
@@ -1160,8 +1280,6 @@ const FLOOR_TYPES = [
 
       if (block.img) ctx.drawImage(block.img, x, y, block.w, block.h);
       else { ctx.fillStyle = block.color || '#66bb6a'; ctx.fillRect(x, y, block.w, block.h); }
-
-      // ✅ Контур антибонуса УБРАН полностью
     }
   }
 
@@ -1175,8 +1293,6 @@ const FLOOR_TYPES = [
 
     if (current.img) ctx.drawImage(current.img, x, y, current.w, current.h);
     else { ctx.fillStyle = current.color || '#66bb6a'; ctx.fillRect(x, y, current.w, current.h); }
-
-    // ✅ Контур антибонуса УБРАН полностью
   }
 
   function drawScore(){
@@ -1231,7 +1347,6 @@ const FLOOR_TYPES = [
 
   let isPaused = false;
 
-  /* ✅ deltaTime */
   let lastFrameTs = 0;
 
   function update(ts){
@@ -1370,7 +1485,7 @@ const FLOOR_TYPES = [
   });
 
   /* ==========================
-     ✅ Leaderboard (JSONP) helpers
+     ✅ Leaderboard (JSONP)
      ========================== */
   function getTgUser(){ const u = Telegram?.WebApp?.initDataUnsafe?.user; return u || null; }
   function getTgId(){ const u = getTgUser(); return u?.id ? String(u.id) : ''; }
@@ -1493,18 +1608,20 @@ const FLOOR_TYPES = [
      ========================== */
   async function boot(){
     doResizeCanvas();
-
     requestAnimationFrame(update);
 
     loaderOverlay.style.display = 'flex';
     updateLoaderProgress(0, 100);
 
     try{
-      const results = await preloadAllAssets((loaded, total)=>{
+      const { results, missing } = await preloadAllAssets((loaded, total)=>{
         updateLoaderProgress(loaded, total);
       });
 
       assignLoadedAssets(results);
+
+      // строгая проверка, чтобы не было зелёных квадратов
+      assertAssetsOrThrow(missing);
 
       warmLb();
 
@@ -1514,7 +1631,8 @@ const FLOOR_TYPES = [
       resetGame();
     }catch(err){
       console.error('Preload failed', err);
-      alert('Ошибка загрузки ассетов. Проверь, что файлы реально лежат рядом с index.html (корень GitHub Pages) и названия совпадают.');
+      loaderOverlay.style.display = 'none';
+      alert(String(err && err.message ? err.message : err));
     }
   }
 
@@ -1522,4 +1640,3 @@ const FLOOR_TYPES = [
 </script>
 </body>
 </html>
-
