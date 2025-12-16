@@ -36,7 +36,6 @@
       position:relative;
     }
 
-    /* ✅ header уменьшен ~на 20% по высоте */
     header{
       text-align:center;
       margin-bottom:6px;
@@ -345,6 +344,62 @@
   let lastCssW = 0, lastCssH = 0;
   let resizeTimer = 0;
 
+  /* ======== (осторожно) подготовка изображений под текущий DPR/scale ======== */
+  let assetsPrepared = false;
+  async function prepareImageSmart(img, targetW, targetH){
+    try{
+      if (!img) return null;
+      if (!('createImageBitmap' in window)) return img;
+
+      const w = Math.max(1, Math.round(targetW));
+      const h = Math.max(1, Math.round(targetH));
+
+      // если целевой размер очень близок — не трогаем
+      if (Math.abs((img.width||0) - w) < 4 && Math.abs((img.height||0) - h) < 4) return img;
+
+      // createImageBitmap с resize (быстрее отрисовка, меньше нагрузка)
+      const bmp = await createImageBitmap(img, {
+        resizeWidth: w,
+        resizeHeight: h,
+        resizeQuality: 'high'
+      });
+      return bmp;
+    } catch (e){
+      return img;
+    }
+  }
+
+  async function prepareAssetsForCurrentScale(){
+    // вызывать только после загрузки ассетов и после doResizeCanvas()
+    // делаем мягко: если не поддерживается/ошибка — ничего страшного
+    const px = DPR * CAMERA_SCALE;
+
+    // фон не трогаем (он часто меняется по размеру и дорогой), оставляем оригинал
+    // backgroundImg = await prepareImageSmart(backgroundImg, canvasW * px, canvasH * px);
+
+    // bag
+    const bagW = (canvasW * BAG_W_RATIO) * px;
+    const bagH = (canvasH * BAG_H_RATIO) * px;
+    bagFrontImg = await prepareImageSmart(bagFrontImg, bagW, bagH);
+    bagBackImg  = await prepareImageSmart(bagBackImg,  bagW, bagH);
+
+    // bonus/coil
+    bonusImg = await prepareImageSmart(bonusImg, BONUS_W * px, BONUS_H * px);
+    coilImg  = await prepareImageSmart(coilImg,  COIL_W  * px, COIL_H  * px);
+
+    // floors
+    for (const t of FLOOR_TYPES){
+      const tw = t.w * px;
+      const th = t.h * px;
+      const arr = FLOOR_IMAGES[t.id];
+      for (let i = 0; i < arr.length; i++){
+        arr[i] = await prepareImageSmart(arr[i], tw, th);
+      }
+    }
+
+    assetsPrepared = true;
+  }
+
   function doResizeCanvas(){
     const vw = window.innerWidth;
     const vh = Math.min(
@@ -394,6 +449,21 @@
 
     if (snowflakes.length) initSnow();
     if (stars.length) initStars();
+
+    // если ассеты уже загружены — пере-подготовку делаем осторожно и нечасто
+    if (assetsLoaded){
+      // на резайзе не будем делать синхронно (может лагнуть): отложим
+      schedulePrepareAssets();
+    }
+  }
+
+  let prepareTimer = 0;
+  function schedulePrepareAssets(){
+    clearTimeout(prepareTimer);
+    prepareTimer = setTimeout(async ()=>{
+      // перестраховка: не дергать лишний раз
+      await prepareAssetsForCurrentScale();
+    }, 250);
   }
 
   function scheduleResize(){
@@ -406,20 +476,15 @@
 
   window.addEventListener('touchmove', e => { e.preventDefault(); }, { passive:false });
 
-  /* ✅ СКОРОСТИ ТЕПЕРЬ НОРМАЛИЗОВАНЫ ЧЕРЕЗ deltaTime
-     Эти значения воспринимай как "на 60fps"
-  */
-  const FALL_SPEED = 9;           // падение (эквивалент px/кадр @60fps)
-  const MOVE_SPEED_START = 2.5;   // движение по X (эквивалент px/кадр @60fps)
+  /* ✅ СКОРОСТИ ЧЕРЕЗ deltaTime */
+  const FALL_SPEED = 9;
+  const MOVE_SPEED_START = 2.5;
 
   const BASE_SPEED_GROWTH = 0.20;
   const MIN_SPEED_GROWTH  = 0.08;
 
   const LEAN_TO_SWAY = 40;
   const MAX_SWAY = 35;
-
-  /* ✅ Красный контур для антибонуса */
-  const ANTI_OUTLINE_COLOR = 'rgba(255, 60, 60, 0.95)';
 
   let tower = [];
   let current = null;
@@ -476,7 +541,6 @@
 
   function lerp(a, b, t){ return a + (b - a) * t; }
 
-  /* deltaTime-friendly lerp: сохраняет "ощущение" при разном FPS */
   function lerpDt(a, b, k, dt60){
     const t = 1 - Math.pow(1 - k, dt60);
     return a + (b - a) * t;
@@ -689,6 +753,16 @@
 
   function randomFloorType(){ return FLOOR_TYPES[randInt(0, FLOOR_TYPES.length - 1)]; }
 
+  function randomBaseFloorType(){
+    // ✅ Tip B никогда не будет самым первым этажом
+    let t = randomFloorType();
+    let guard = 0;
+    while (t && t.id === 'B' && guard++ < 20){
+      t = randomFloorType();
+    }
+    return t || FLOOR_TYPES[0];
+  }
+
   function randomFloorImage(typeId){
     const arr = FLOOR_IMAGES[typeId] || [];
     if (!arr.length) return null;
@@ -726,27 +800,54 @@
     loaderBarFill.style.width = p + '%';
   }
 
+  /* ✅ Изменение 1: параллельная загрузка с лимитом */
+  let assetsLoaded = false;
   async function loadAllAssetsWithProgress(){
     const EXT_ORDER = ['.webp', '.png', '.jpg', '.jpeg'];
 
-    const totalFloorVariants = FLOOR_TYPES.reduce((s,t)=>s + t.variants, 0);
-    const totalAssets = totalFloorVariants + 5;
-    let loadedAssets = 0;
-    function oneDone(){ loadedAssets++; updateLoaderProgress(loadedAssets, totalAssets); }
+    const tasks = [];
 
     for (const t of FLOOR_TYPES){
       for (let i = 1; i <= t.variants; i++){
-        const img = await loadWithFallback(`${t.filePrefix}${i}`, EXT_ORDER);
-        if (img) FLOOR_IMAGES[t.id].push(img);
-        oneDone();
+        tasks.push(async ()=>{
+          const img = await loadWithFallback(`${t.filePrefix}${i}`, EXT_ORDER);
+          if (img) FLOOR_IMAGES[t.id].push(img);
+        });
       }
     }
 
-    { const img = await loadWithFallback('background', EXT_ORDER); if (img) backgroundImg = img; oneDone(); }
-    { const img = await loadWithFallback('bonus', EXT_ORDER); if (img) bonusImg = img; oneDone(); }
-    { const img = await loadWithFallback('coil', EXT_ORDER); if (img) coilImg = img; oneDone(); }
-    { const img = await loadWithFallback('bag2', EXT_ORDER); if (img) bagBackImg = img; oneDone(); }
-    { const img = await loadWithFallback('bag1', EXT_ORDER); if (img) bagFrontImg = img; oneDone(); }
+    tasks.push(async ()=>{ backgroundImg = await loadWithFallback('background', EXT_ORDER) || null; });
+    tasks.push(async ()=>{ bonusImg      = await loadWithFallback('bonus', EXT_ORDER) || null; });
+    tasks.push(async ()=>{ coilImg       = await loadWithFallback('coil', EXT_ORDER)  || null; });
+    tasks.push(async ()=>{ bagBackImg    = await loadWithFallback('bag2', EXT_ORDER)  || null; });
+    tasks.push(async ()=>{ bagFrontImg   = await loadWithFallback('bag1', EXT_ORDER)  || null; });
+
+    const totalAssets = tasks.length;
+    let loadedAssets = 0;
+
+    const concurrency = IS_MOBILE ? 6 : 10;
+
+    async function worker(){
+      while (tasks.length){
+        const job = tasks.shift();
+        if (!job) return;
+        try{
+          await job();
+        } finally {
+          loadedAssets++;
+          updateLoaderProgress(loadedAssets, totalAssets);
+        }
+      }
+    }
+
+    const workers = [];
+    for (let i = 0; i < concurrency; i++) workers.push(worker());
+    await Promise.all(workers);
+
+    assetsLoaded = true;
+
+    // ✅ (осторожно) пробуем “подготовить” изображения под текущий DPR/scale
+    await prepareAssetsForCurrentScale();
   }
 
   function drawBackground(worldHeight){
@@ -796,14 +897,6 @@
     ctx.drawImage(bagFrontImg, r.x, sy, r.w, r.h);
   }
 
-  function drawAntiOutline(x, y, w, h){
-    ctx.save();
-    ctx.strokeStyle = ANTI_OUTLINE_COLOR;
-    ctx.lineWidth = Math.max(2, Math.min(6, w * 0.03));
-    ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
-    ctx.restore();
-  }
-
   function resetGame(){
     tower = [];
     current = null;
@@ -832,7 +925,8 @@
     initSnow();
     initStars();
 
-    const baseType = randomFloorType();
+    // ✅ первый этаж не Tip B
+    const baseType = randomBaseFloorType();
     const baseX = (canvasW - baseType.w) / 2;
     const baseY = FLOOR_Y - baseType.h;
     const base = createBlock(baseType, baseX, baseY);
@@ -846,10 +940,9 @@
   function spawnBlock(){
     const last = tower[tower.length - 1];
 
-    /* ✅ ГДЕ РЕГУЛИРОВАТЬ ВЫСОТУ ПОЯВЛЕНИЯ БЛОКА (чтобы не улетал за верх экрана):
-       было: 12
-       хочешь ниже -> уменьши 12 (например 10)
-       хочешь выше -> увеличь 12 (например 14)
+    /* ✅ ГДЕ РЕГУЛИРОВАТЬ ВЫСОТУ ПОЯВЛЕНИЯ БЛОКА:
+       меньше число -> блок появляется ниже
+       больше число -> блок появляется выше
     */
     const GAP_ABOVE = Math.min(BLOCK_HEIGHT * 8, canvasH * 0.55);
 
@@ -1036,10 +1129,6 @@
 
       if (block.img) ctx.drawImage(block.img, x, y, block.w, block.h);
       else { ctx.fillStyle = block.color || '#66bb6a'; ctx.fillRect(x, y, block.w, block.h); }
-
-      if (block.isAntiBonus){
-        drawAntiOutline(x, y, block.w, block.h);
-      }
     }
   }
 
@@ -1053,10 +1142,6 @@
 
     if (current.img) ctx.drawImage(current.img, x, y, current.w, current.h);
     else { ctx.fillStyle = current.color || '#66bb6a'; ctx.fillRect(x, y, current.w, current.h); }
-
-    if (current.isAntiBonus){
-      drawAntiOutline(x, y, current.w, current.h);
-    }
   }
 
   function drawScore(){
@@ -1111,7 +1196,6 @@
 
   let isPaused = false;
 
-  /* ✅ deltaTime */
   let lastFrameTs = 0;
 
   function update(ts){
@@ -1125,9 +1209,8 @@
     const dtSec = Math.max(0, (ts - lastFrameTs) / 1000);
     lastFrameTs = ts;
 
-    /* dt60 = сколько "60fps-кадров" прошло за этот кадр */
     let dt60 = dtSec * 60;
-    dt60 = Math.max(0, Math.min(2.5, dt60)); // clamp, чтобы не улетало при лаге
+    dt60 = Math.max(0, Math.min(2.5, dt60));
 
     ctx.clearRect(0, 0, canvasW, canvasH);
 
@@ -1246,14 +1329,13 @@
   document.addEventListener('visibilitychange', ()=>{
     isPaused = document.hidden;
     if (!document.hidden){
-      lastFrameTs = 0; // чтобы не было огромного dt после возврата
+      lastFrameTs = 0;
     }
   });
 
   async function boot(){
     doResizeCanvas();
 
-    /* важный момент: запускаем rAF с timestamp */
     requestAnimationFrame(update);
 
     await loadAllAssetsWithProgress();
@@ -1268,8 +1350,4 @@
 </script>
 </body>
 </html>
-
-
-
-
 
