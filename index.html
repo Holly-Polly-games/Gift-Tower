@@ -375,14 +375,14 @@
   const COIL_W = 128;
   const COIL_H = 120;
 
-  /* ✅ ВАЖНО: под твои файлы TipA-1.webp, TipB-2.webp ... */
-const FLOOR_TYPES = [
-  { id: 'A', label: 'Tip A', filePrefix: 'TipA-', variants: 2, w: 155, h: 121 },
-  { id: 'B', label: 'Tip B', filePrefix: 'TipB-', variants: 3, w: 190, h: 149 },
-  { id: 'C', label: 'Tip C', filePrefix: 'TipC-', variants: 2, w: 116, h: 186 },
-  { id: 'D', label: 'Tip D', filePrefix: 'TipD-', variants: 4, w: 100, h: 100 },
-  { id: 'F', label: 'Tip F', filePrefix: 'TipF-', variants: 3, w: 119, h: 205 }
-];
+  /* ✅ под твои файлы TipA-1.webp, TipB-2.webp ... */
+  const FLOOR_TYPES = [
+    { id: 'A', label: 'Tip A', filePrefix: 'TipA-', variants: 2, w: 155, h: 121 },
+    { id: 'B', label: 'Tip B', filePrefix: 'TipB-', variants: 3, w: 190, h: 149 },
+    { id: 'C', label: 'Tip C', filePrefix: 'TipC-', variants: 2, w: 116, h: 186 },
+    { id: 'D', label: 'Tip D', filePrefix: 'TipD-', variants: 4, w: 100, h: 100 },
+    { id: 'F', label: 'Tip F', filePrefix: 'TipF-', variants: 3, w: 119, h: 205 }
+  ];
 
   const FLOOR_IMAGES = {};
   FLOOR_TYPES.forEach(t => FLOOR_IMAGES[t.id] = []);
@@ -781,56 +781,39 @@ const FLOOR_TYPES = [
   }
 
   /* ==========================
-     ✅ PRELOAD (быстро + без таймаутов по 9 сек на каждый 404)
+     ✅ PRELOAD: ТОЛЬКО WEBP, БЕЗ HEAD, БЕЗ FALLBACK
      ========================== */
-
-  async function canFetchHead(){
-    try{
-      const r = await fetch(location.href, { method:'HEAD', cache:'no-store' });
-      return !!r;
-    }catch(e){
-      return false;
-    }
-  }
-
-  async function headOk(url){
-    try{
-      const r = await fetch(url, { method:'HEAD', cache:'force-cache' });
-      return r.ok;
-    }catch(e){
-      return null; // нельзя — значит пропустим HEAD и пойдём через Image()
-    }
-  }
-
-  function loadImageOnce(url, timeout=8000){
+  function loadWebp(base, timeout = 8000){
     return new Promise((resolve, reject) => {
-      let done=false;
       const img = new Image();
+      let done = false;
+
+      const to = setTimeout(() => {
+        if (!done){
+          done = true;
+          img.src = '';
+          reject(new Error('timeout'));
+        }
+      }, timeout);
+
+      img.onload = () => {
+        if (done) return;
+        done = true;
+        clearTimeout(to);
+        resolve(img);
+      };
+
+      img.onerror = () => {
+        if (done) return;
+        done = true;
+        clearTimeout(to);
+        reject(new Error('error'));
+      };
+
       img.decoding = 'async';
       img.loading = 'eager';
-      const to = setTimeout(()=>{ if(!done){ done=true; img.src=''; reject(new Error('timeout')); } }, timeout);
-      img.onload = ()=>{ if(done) return; done=true; clearTimeout(to); resolve(img); };
-      img.onerror = ()=>{ if(done) return; done=true; clearTimeout(to); reject(new Error('error')); };
-      img.src = url;
+      img.src = `./${base}.webp`;
     });
-  }
-
-  async function tryLoadBase(base, opts={timeout:8000, bust:false, useHead:false}){
-    const exts = ['.webp', '.png', '.jpg', '.jpeg'];
-    for (const ext of exts){
-      const url = base + ext + (opts.bust ? `?_ts=${Date.now()}` : '');
-
-      if (opts.useHead){
-        const ok = await headOk(url);
-        if (ok === false) continue; // 404 -> даже не пробуем грузить картинку
-      }
-
-      try{
-        const img = await loadImageOnce(url, opts.timeout);
-        return { ok:true, img, url };
-      } catch(e){}
-    }
-    return { ok:false };
   }
 
   function buildAssetBases(){
@@ -849,26 +832,26 @@ const FLOOR_TYPES = [
     const total = ASSET_BASES.length;
     let loaded = 0;
 
-    const useHead = await canFetchHead();
-
-    const CONCURRENCY = IS_MOBILE ? 4 : 8;
-    let idx = 0;
     const results = {};
     const missing = [];
 
-    const workers = new Array(CONCURRENCY).fill(0).map(async ()=>{
+    const CONCURRENCY = IS_MOBILE ? 4 : 6;
+    let idx = 0;
+
+    const workers = new Array(CONCURRENCY).fill(0).map(async () => {
       while (idx < total){
         const i = idx++;
         const base = ASSET_BASES[i];
 
-        let res = await tryLoadBase(base, { timeout:8000, bust:false, useHead });
-        if (!res.ok) res = await tryLoadBase(base, { timeout:8000, bust:true, useHead:false });
-
-        results[base] = res.ok ? res.img : null;
-        if (!res.ok) missing.push(base);
+        try{
+          results[base] = await loadWebp(base, 8000);
+        }catch(e){
+          results[base] = null;
+          missing.push(base);
+        }
 
         loaded++;
-        if (onProgress) onProgress(loaded, total, base, !!res.ok);
+        onProgress?.(loaded, total);
       }
     });
 
@@ -887,10 +870,10 @@ const FLOOR_TYPES = [
     }
 
     backgroundImg = results['background'] || null;
-    bonusImg = results['bonus'] || null;
-    coilImg = results['coil'] || null;
-    bagFrontImg = results['bag1'] || null;
-    bagBackImg  = results['bag2'] || null;
+    bonusImg      = results['bonus'] || null;
+    coilImg       = results['coil'] || null;
+    bagFrontImg   = results['bag1'] || null;
+    bagBackImg    = results['bag2'] || null;
   }
 
   function drawBackground(worldHeight){
@@ -1166,7 +1149,7 @@ const FLOOR_TYPES = [
       const y = screenY;
 
       if (block.img) ctx.drawImage(block.img, x, y, block.w, block.h);
-      else { ctx.fillStyle = block.color || '#66bb6a'; ctx.fillRect(x, y, block.w, block.h); }
+      else { /* если нет img - не рисуем зелёный квадрат */ }
     }
   }
 
@@ -1179,7 +1162,7 @@ const FLOOR_TYPES = [
     const y = screenY;
 
     if (current.img) ctx.drawImage(current.img, x, y, current.w, current.h);
-    else { ctx.fillStyle = current.color || '#66bb6a'; ctx.fillRect(x, y, current.w, current.h); }
+    else { /* если нет img - не рисуем зелёный квадрат */ }
   }
 
   function drawScore(){
@@ -1370,6 +1353,9 @@ const FLOOR_TYPES = [
     }
   });
 
+  /* ==========================
+     Leaderboard JSONP
+     ========================== */
   function getTgUser(){ const u = Telegram?.WebApp?.initDataUnsafe?.user; return u || null; }
   function getTgId(){ const u = getTgUser(); return u?.id ? String(u.id) : ''; }
   function getTgUsername(){
@@ -1476,6 +1462,9 @@ const FLOOR_TYPES = [
   lbClose.addEventListener('click', ()=>{ lbModal.hidden = true; });
   lbModal.addEventListener('click', (e)=>{ if (e.target === lbModal) lbModal.hidden = true; });
 
+  /* ==========================
+     Boot
+     ========================== */
   async function boot(){
     doResizeCanvas();
     requestAnimationFrame(update);
@@ -1490,14 +1479,13 @@ const FLOOR_TYPES = [
 
       assignLoadedAssets(results);
 
-      // ✅ если вообще не загрузились типы блоков — показываем понятную ошибку
+      // если не загрузились хотя бы базовые типы — показываем понятную ошибку
       const essentialMissing = missing.filter(b => b.startsWith('Tip'));
       if (essentialMissing.length){
         alert(
-          'Не найдены ассеты (404). Проверь, что файлы лежат рядом с index.html (корень GitHub Pages) и имена совпадают 1в1:\n\n' +
-          essentialMissing.slice(0, 20).map(x => `- ${x}.webp`).join('\n') +
-          (essentialMissing.length > 20 ? '\n\n...и ещё ' + (essentialMissing.length - 20) + ' шт.' : '') +
-          '\n\nВажно: регистр/дефисы/пробелы должны совпадать.'
+          'Не найдены ассеты (.webp). Проверь, что файлы лежат в КОРНЕ рядом с index.html:\n\n' +
+          essentialMissing.slice(0, 30).map(x => `- ${x}.webp`).join('\n') +
+          (essentialMissing.length > 30 ? '\n\n...и ещё ' + (essentialMissing.length - 30) + ' шт.' : '')
         );
       }
 
@@ -1517,5 +1505,3 @@ const FLOOR_TYPES = [
 </script>
 </body>
 </html>
-
-
