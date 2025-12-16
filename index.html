@@ -14,6 +14,8 @@
       --field-bg:#9b98e5;
       --control-green:#2e8b57;
       --btn-color:#fff;
+
+      --lb-yellow:#ffe84a;
     }
 
     html,body{
@@ -175,16 +177,17 @@
       font-size:16px;
       cursor:pointer;
       box-shadow:0 6px 12px rgba(0,0,0,0.18);
-      min-width:120px;
+      min-width:160px;
       touch-action:manipulation;
     }
+    /* ✅ КНОПКА "Таблица лидеров" — жёлтая */
     .go-btn.secondary{
-      background:#ffffff;
+      background:var(--lb-yellow);
       color:#000;
     }
 
     @media (max-width:480px){
-      .go-btn{ font-size:15px; padding:10px 16px; }
+      .go-btn{ font-size:15px; padding:10px 16px; min-width:150px; }
       .overlay-start .msg{ font-size:17px; }
       .overlay-start .rules{ font-size:13px; }
     }
@@ -220,6 +223,62 @@
       border-radius:999px;
       transition:width 0.15s ease-out;
     }
+
+    /* ✅ Модалка лидерборда */
+    .lb-modal{
+      position:fixed;
+      inset:0;
+      background:rgba(0,0,0,.5);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      z-index:120;
+    }
+    .lb-modal[hidden]{ display:none; }
+    .lb-card{
+      background:#fff;
+      border-radius:14px;
+      width:min(540px,94vw);
+      box-shadow:0 10px 40px rgba(0,0,0,.35);
+      padding:12px 14px;
+      max-height:70vh;
+      overflow:auto;
+    }
+    .lb-head{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:8px;
+    }
+    .lb-head h3{
+      margin:0;
+      font-size:18px;
+      color:#000;
+    }
+    .lb-close{
+      background:#eee;
+      border:none;
+      border-radius:8px;
+      padding:6px 10px;
+      cursor:pointer;
+    }
+    .lb-list{
+      margin:8px 0 0;
+      padding:0 10px 8px;
+      list-style:none;
+    }
+    .lb-item{
+      padding:8px;
+      border-radius:8px;
+      display:flex;
+      justify-content:space-between;
+      gap:8px;
+      align-items:center;
+      margin-bottom:8px;
+      background:#f6f6f6;
+      color:#000;
+    }
+    .lb-top5{ background:#fff8d6; }
   </style>
 </head>
 <body>
@@ -240,7 +299,7 @@
     </div>
   </div>
 
-  <div id="startOverlay" class="overlay-start">
+  <div id="startOverlay" class="overlay-start" style="display:none;">
     <div class="panel">
       <div class="msg">Тапни, чтобы начать строить башню</div>
 
@@ -267,16 +326,27 @@
   </div>
 </div>
 
-<script>
-  // ✅ Service Worker (ускоряет повторные запуски из кеша)
-  (function registerSW(){
-    try{
-      if ('serviceWorker' in navigator){
-        navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(()=>{});
-      }
-    }catch(e){}
-  })();
+<!-- ✅ Leaderboard modal -->
+<div id="leaderboardModal" class="lb-modal" hidden>
+  <div class="lb-card">
+    <div class="lb-head">
+      <h3>Таблица лидеров</h3>
+      <button id="lbClose" class="lb-close">✕</button>
+    </div>
+    <div id="lbLoading" style="display:none;margin-top:8px;color:#000;">Загрузка...</div>
+    <ol id="lbList" class="lb-list"></ol>
+  </div>
+</div>
 
+<script>
+  /* ==========================
+     ✅ Leaderboard CONFIG
+     ========================== */
+  const LB_URL = 'https://script.google.com/macros/s/AKfycbxHTrSijEU1Li9xqkDpMFD43K5q561HC492NiO0hbvQfiE2Tnln7JLR8FFtztTvCy1x/exec';
+
+  /* ==========================
+     Canvas / DOM
+     ========================== */
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d', { alpha:true, desynchronized:true });
 
@@ -288,6 +358,11 @@
   const gameOverScoreEl = document.getElementById('gameOverScore');
   const btnRestart = document.getElementById('btnRestart');
   const btnLeaderboard = document.getElementById('btnLeaderboard');
+
+  const lbModal = document.getElementById('leaderboardModal');
+  const lbList = document.getElementById('lbList');
+  const lbClose = document.getElementById('lbClose');
+  const lbLoading = document.getElementById('lbLoading');
 
   let DPR = 1;
   let canvasW = 0, canvasH = 0;
@@ -414,7 +489,7 @@
 
   window.addEventListener('touchmove', e => { e.preventDefault(); }, { passive:false });
 
-  /* ✅ Скорости нормализованы через deltaTime (значения = ощущение на 60fps) */
+  /* ✅ СКОРОСТИ НОРМАЛИЗОВАНЫ ЧЕРЕЗ deltaTime (как было у тебя) */
   const FALL_SPEED = 9;
   const MOVE_SPEED_START = 2.5;
 
@@ -499,7 +574,6 @@
 
   function getSkyGradientColors(height){
     const h = Math.max(0, height);
-
     let base;
     if (h <= SKY_STAGE1){
       base = lerpColor(COLOR_SUNSET, COLOR_LIGHT, h / SKY_STAGE1);
@@ -517,7 +591,6 @@
     };
   }
 
-  /* ======== SNOW ======== */
   function makeFlake(randomY){
     return {
       x: Math.random() * canvasW,
@@ -564,7 +637,6 @@
     ctx.restore();
   }
 
-  /* ======== STARS ======== */
   function makeStar(randomY){
     return {
       x: Math.random() * canvasW,
@@ -599,7 +671,6 @@
     ctx.restore();
   }
 
-  /* ======== SPARKS ======== */
   function spawnSparks(worldX, worldY){
     const count = 24;
     for (let i = 0; i < count; i++){
@@ -640,7 +711,6 @@
     ctx.restore();
   }
 
-  /* ======== FALLING BLOCKS ======== */
   function spawnFallingBlocks(blocks){
     for (const b of blocks){
       fallingBlocks.push({
@@ -696,6 +766,12 @@
 
   function randomFloorType(){ return FLOOR_TYPES[randInt(0, FLOOR_TYPES.length - 1)]; }
 
+  /* ✅ Для самого первого блока: исключаем Tip B */
+  function randomBaseFloorType(){
+    const pool = FLOOR_TYPES.filter(t => t.id !== 'B');
+    return pool[randInt(0, pool.length - 1)];
+  }
+
   function randomFloorImage(typeId){
     const arr = FLOOR_IMAGES[typeId] || [];
     if (!arr.length) return null;
@@ -710,76 +786,96 @@
     return { typeId:type.id, x, y, w:type.w, h:type.h, img: randomFloorImage(type.id), color:'#66bb6a', isBonus:false, isAntiBonus:false };
   }
 
-  function loadWithFallback(baseName, exts){
-    return new Promise((resolve)=>{
-      let idx = 0;
-      function tryNext(){
-        if (idx >= exts.length){ resolve(null); return; }
-        const src = baseName + exts[idx++];
-        const img = new Image();
-        img.onload = async ()=>{
-          try{ if (img.decode) await img.decode(); }catch(e){}
-          resolve(img);
-        };
-        img.onerror = ()=>tryNext();
-        img.src = src;
-      }
-      tryNext();
-    });
-  }
-
   function updateLoaderProgress(loaded, total){
     const p = total ? Math.round(loaded / total * 100) : 100;
     loaderBarFill.style.width = p + '%';
   }
 
-  // ✅ параллельная загрузка ассетов (быстрее, чем await в цикле)
-  async function loadAllAssetsWithProgress(){
-    const EXT_ORDER = ['.webp', '.png', '.jpg', '.jpeg'];
+  /* ==========================
+     ✅ FAST PRELOAD (как в змейке)
+     - всё равно ждём ассеты до старта
+     - но грузим конкуррентно
+     ========================== */
+  function loadImageOnce(url, timeout=9000){
+    return new Promise((resolve, reject) => {
+      let done=false;
+      const img = new Image();
+      img.decoding = 'async';
+      img.loading = 'eager';
+      const to = setTimeout(()=>{ if(!done){ done=true; img.src=''; reject(new Error('timeout')); } }, timeout);
+      img.onload = ()=>{ if(done) return; done=true; clearTimeout(to); resolve(img); };
+      img.onerror = ()=>{ if(done) return; done=true; clearTimeout(to); reject(new Error('error')); };
+      img.src = url;
+    });
+  }
 
-    const tasks = [];
+  async function tryLoadBase(base, opts={timeout:9000, bust:false}){
+    const exts = ['.webp', '.png', '.jpg', '.jpeg'];
+    for (const ext of exts){
+      const url = base + ext + (opts.bust ? `?_ts=${Date.now()}` : '');
+      try{
+        const img = await loadImageOnce(url, opts.timeout);
+        return { ok:true, img, url };
+      } catch(e){}
+    }
+    return { ok:false };
+  }
 
+  function buildAssetBases(){
+    const bases = [];
     for (const t of FLOOR_TYPES){
-      for (let i = 1; i <= t.variants; i++){
-        tasks.push({
-          key: `floor:${t.id}:${i}`,
-          run: async ()=>{
-            const img = await loadWithFallback(`${t.filePrefix}${i}`, EXT_ORDER);
-            if (img) FLOOR_IMAGES[t.id].push(img);
-          }
-        });
+      for (let i=1;i<=t.variants;i++){
+        bases.push(`${t.filePrefix}${i}`);
       }
     }
+    bases.push('background','bonus','coil','bag1','bag2');
+    return bases;
+  }
 
-    tasks.push({ key:'background', run: async ()=>{ const img = await loadWithFallback('background', EXT_ORDER); if (img) backgroundImg = img; }});
-    tasks.push({ key:'bonus',      run: async ()=>{ const img = await loadWithFallback('bonus', EXT_ORDER);      if (img) bonusImg = img; }});
-    tasks.push({ key:'coil',       run: async ()=>{ const img = await loadWithFallback('coil', EXT_ORDER);       if (img) coilImg = img; }});
-    tasks.push({ key:'bag2',       run: async ()=>{ const img = await loadWithFallback('bag2', EXT_ORDER);       if (img) bagBackImg = img; }});
-    tasks.push({ key:'bag1',       run: async ()=>{ const img = await loadWithFallback('bag1', EXT_ORDER);       if (img) bagFrontImg = img; }});
+  async function preloadAllAssets(onProgress){
+    const ASSET_BASES = buildAssetBases();
+    const total = ASSET_BASES.length;
+    let loaded = 0;
 
-    const totalAssets = tasks.length;
-    let loadedAssets = 0;
+    const CONCURRENCY = 6; // как в змейке
+    let idx = 0;
+    const results = {}; // base -> Image|null
 
-    function oneDone(){
-      loadedAssets++;
-      updateLoaderProgress(loadedAssets, totalAssets);
-    }
+    const workers = new Array(CONCURRENCY).fill(0).map(async ()=>{
+      while (idx < total){
+        const i = idx++;
+        const base = ASSET_BASES[i];
 
-    // ограничение параллелизма, чтобы не душить сеть/память (и Telegram WebView)
-    const CONCURRENCY = 6;
-    let cursor = 0;
+        let res = await tryLoadBase(base, { timeout:9000, bust:false });
+        if (!res.ok) res = await tryLoadBase(base, { timeout:9000, bust:true });
 
-    async function worker(){
-      while (cursor < tasks.length){
-        const i = cursor++;
-        try{ await tasks[i].run(); }catch(e){}
-        oneDone();
+        results[base] = res.ok ? res.img : null;
+
+        loaded++;
+        if (onProgress) onProgress(loaded, total, base, !!res.ok);
       }
-    }
+    });
 
-    const workers = [];
-    for (let i = 0; i < CONCURRENCY; i++) workers.push(worker());
     await Promise.all(workers);
+    return results;
+  }
+
+  function assignLoadedAssets(results){
+    // floors
+    for (const t of FLOOR_TYPES){
+      FLOOR_IMAGES[t.id] = [];
+      for (let i=1;i<=t.variants;i++){
+        const base = `${t.filePrefix}${i}`;
+        const img = results[base] || null;
+        if (img) FLOOR_IMAGES[t.id].push(img);
+      }
+    }
+
+    backgroundImg = results['background'] || null;
+    bonusImg = results['bonus'] || null;
+    coilImg = results['coil'] || null;
+    bagFrontImg = results['bag1'] || null;
+    bagBackImg  = results['bag2'] || null;
   }
 
   function drawBackground(worldHeight){
@@ -857,10 +953,8 @@
     initSnow();
     initStars();
 
-    // ✅ первый (базовый) этаж НЕ может быть Tip B
-    let baseType = randomFloorType();
-    while (baseType && baseType.id === 'B') baseType = randomFloorType();
-
+    // ✅ база: Tip B нельзя
+    const baseType = randomBaseFloorType();
     const baseX = (canvasW - baseType.w) / 2;
     const baseY = FLOOR_Y - baseType.h;
     const base = createBlock(baseType, baseX, baseY);
@@ -875,8 +969,8 @@
     const last = tower[tower.length - 1];
 
     /* ✅ ГДЕ РЕГУЛИРОВАТЬ ВЫСОТУ ПОЯВЛЕНИЯ БЛОКА:
-       меньше -> блок появляется ниже (виднее на телефоне)
-       больше -> выше
+       хочешь ниже -> уменьши GAP_ABOVE
+       хочешь выше -> увеличь GAP_ABOVE
     */
     const GAP_ABOVE = Math.min(BLOCK_HEIGHT * 8, canvasH * 0.55);
 
@@ -1031,6 +1125,9 @@
     if (gameOver){
       gameStarted = false;
       showGameOverMenu();
+
+      // ✅ отправляем результат (не блокируем UI)
+      trySubmitScore();
     }
   }
 
@@ -1063,6 +1160,8 @@
 
       if (block.img) ctx.drawImage(block.img, x, y, block.w, block.h);
       else { ctx.fillStyle = block.color || '#66bb6a'; ctx.fillRect(x, y, block.w, block.h); }
+
+      // ✅ Контур антибонуса УБРАН полностью
     }
   }
 
@@ -1076,6 +1175,8 @@
 
     if (current.img) ctx.drawImage(current.img, x, y, current.w, current.h);
     else { ctx.fillStyle = current.color || '#66bb6a'; ctx.fillRect(x, y, current.w, current.h); }
+
+    // ✅ Контур антибонуса УБРАН полностью
   }
 
   function drawScore(){
@@ -1129,6 +1230,8 @@
   }
 
   let isPaused = false;
+
+  /* ✅ deltaTime */
   let lastFrameTs = 0;
 
   function update(ts){
@@ -1245,9 +1348,9 @@
     handleStart();
   });
 
-  btnLeaderboard.addEventListener('click', (e)=>{
+  btnLeaderboard.addEventListener('click', async (e)=>{
     e.stopPropagation();
-    console.log('Открыть таблицу лидеров (TODO)');
+    openLeaderboard();
   });
 
   (function tgReady(){
@@ -1266,16 +1369,153 @@
     }
   });
 
+  /* ==========================
+     ✅ Leaderboard (JSONP) helpers
+     ========================== */
+  function getTgUser(){ const u = Telegram?.WebApp?.initDataUnsafe?.user; return u || null; }
+  function getTgId(){ const u = getTgUser(); return u?.id ? String(u.id) : ''; }
+  function getTgUsername(){
+    const u = getTgUser();
+    if (!u) return '';
+    if (u.username) return '@' + u.username;
+    const fn = u.first_name || '', ln = u.last_name || '';
+    const combo = (fn + ' ' + ln).trim();
+    return combo || 'Игрок';
+  }
+
+  function submitScoreJSONP({ username, score, tg_id }){
+    return new Promise((resolve, reject) => {
+      const cbName = '__hp_submit_cb_' + Date.now() + '_' + Math.floor(Math.random()*9999);
+      const script = document.createElement('script');
+
+      window[cbName] = function(resp){
+        try{ resolve(resp); }
+        finally { try{ delete window[cbName]; }catch(_){} script.remove(); }
+      };
+
+      const params = new URLSearchParams({ username: username, score: String(score), tg_id: tg_id || '' });
+      script.src = LB_URL + '?' + params.toString() + '&callback=' + cbName;
+      script.onerror = function(){
+        try{ delete window[cbName]; }catch(_){}
+        script.remove();
+        reject(new Error('JSONP send failed'));
+      };
+
+      document.body.appendChild(script);
+    });
+  }
+
+  function fetchLeaderboardJSONP(){
+    return new Promise((resolve, reject) => {
+      const cbName = '__hp_top_cb_' + Date.now() + '_' + Math.floor(Math.random()*9999);
+      const script = document.createElement('script');
+
+      window[cbName] = function(resp){
+        try{ resolve(resp); }
+        finally { try{ delete window[cbName]; }catch(_){} script.remove(); }
+      };
+
+      script.src = LB_URL + '?callback=' + cbName;
+      script.onerror = function(){
+        try{ delete window[cbName]; }catch(_){}
+        script.remove();
+        reject(new Error('JSONP fetch failed'));
+      };
+
+      document.body.appendChild(script);
+    });
+  }
+
+  function warmLb(){
+    try{
+      const s = document.createElement('script');
+      s.src = LB_URL + '?_warm=1';
+      s.async = true;
+      s.onload = ()=>s.remove();
+      s.onerror = ()=>s.remove();
+      document.body.appendChild(s);
+    }catch(e){}
+  }
+
+  function trySubmitScore(){
+    try{
+      const t0 = performance.now();
+      submitScoreJSONP({
+        username: getTgUsername() || 'Игрок',
+        score: score,
+        tg_id: getTgId() || ''
+      })
+      .then(res => {
+        console.log('submitScoreJSONP OK', res, 'ms=', Math.round(performance.now()-t0));
+      })
+      .catch(err => {
+        console.warn('submitScoreJSONP ERR', err, 'ms=', Math.round(performance.now()-t0));
+      });
+    }catch(e){
+      console.warn('submit failed sync', e);
+    }
+  }
+
+  async function openLeaderboard(){
+    lbList.innerHTML = '';
+    lbLoading.style.display = 'block';
+    lbModal.hidden = false;
+
+    try{
+      const data = await fetchLeaderboardJSONP();
+      const top = (data.top || []).slice(0, 10);
+
+      lbList.innerHTML = '';
+      if (!top.length){
+        lbList.innerHTML = '<li style="padding:8px;color:#000">Пока пусто. Стань первым(ой) ✨</li>';
+      } else {
+        top.forEach((row, idx)=>{
+          const li = document.createElement('li');
+          li.className = 'lb-item';
+          if (idx < 5) li.classList.add('lb-top5');
+          li.innerHTML = `<span>#${idx+1} ${row.username || 'Игрок'}</span><strong>${row.score}</strong>`;
+          lbList.appendChild(li);
+        });
+      }
+    }catch(e){
+      lbList.innerHTML = '<li style="padding:8px;color:#a00">Не удалось загрузить таблицу лидеров.</li>';
+      console.warn(e);
+    }finally{
+      lbLoading.style.display = 'none';
+    }
+  }
+
+  lbClose.addEventListener('click', ()=>{ lbModal.hidden = true; });
+  lbModal.addEventListener('click', (e)=>{ if (e.target === lbModal) lbModal.hidden = true; });
+
+  /* ==========================
+     Boot
+     ========================== */
   async function boot(){
     doResizeCanvas();
+
     requestAnimationFrame(update);
 
-    await loadAllAssetsWithProgress();
+    loaderOverlay.style.display = 'flex';
+    updateLoaderProgress(0, 100);
 
-    loaderOverlay.style.display = 'none';
-    startOverlay.style.display = 'flex';
+    try{
+      const results = await preloadAllAssets((loaded, total)=>{
+        updateLoaderProgress(loaded, total);
+      });
 
-    resetGame();
+      assignLoadedAssets(results);
+
+      warmLb();
+
+      loaderOverlay.style.display = 'none';
+      startOverlay.style.display = 'flex';
+
+      resetGame();
+    }catch(err){
+      console.error('Preload failed', err);
+      alert('Ошибка загрузки ассетов. Проверь, что файлы реально лежат рядом с index.html (корень GitHub Pages) и названия совпадают.');
+    }
   }
 
   boot();
