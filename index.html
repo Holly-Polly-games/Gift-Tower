@@ -288,7 +288,7 @@
      меньше число -> сильнее "отдаляем" (видно больше мира)
      больше число -> "приближаем" (объекты крупнее)
   */
-  const CAMERA_SCALE = 0.70;
+  const CAMERA_SCALE = 0.72;
 
   const BLOCK_HEIGHT = 30;
 
@@ -851,7 +851,7 @@
        хочешь ниже -> уменьши 12 (например 10)
        хочешь выше -> увеличь 12 (например 14)
     */
-    const GAP_ABOVE = Math.min(BLOCK_HEIGHT * 10, canvasH * 0.55);
+    const GAP_ABOVE = Math.min(BLOCK_HEIGHT * 8, canvasH * 0.55);
 
     let block;
 
@@ -1268,6 +1268,7 @@
 </script>
 </body>
 </html>
+
 
 
 
