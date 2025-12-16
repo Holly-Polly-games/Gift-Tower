@@ -1,15 +1,51 @@
-/* sw.js — Holly Polly Tower (fixed)
-   - Быстрый старт за счёт кеша ассетов
-   - Не застревает на старом index.html после переименований
-   - Не кеширует 404
-   - Не плодит кеш из-за ?_ts=...
+/* sw.js — Holly Polly Tower
+   ✅ precache ассетов (чтобы 2-й запуск был мгновенный)
+   ✅ cache-first для изображений
+   ✅ network-first для html (чтобы обновления прилетали)
 */
 
-const CACHE_VERSION = "hp-tower-v3";          // <-- ВАЖНО: меняй при обновлениях
-const RUNTIME_CACHE = `${CACHE_VERSION}-rt`;
+const CACHE_VERSION = "hp-tower-v2";       // <-- меняй версию при каждом деплое
+const PRECACHE = `${CACHE_VERSION}-precache`;
+const RUNTIME  = `${CACHE_VERSION}-runtime`;
+
+const PRECACHE_URLS = [
+  "./",
+  "./index.html",
+  "./logo.png",
+
+  "./background.webp",
+  "./bonus.webp",
+  "./coil.webp",
+  "./bag1.webp",
+  "./bag2.webp",
+
+  "./TipA-1.webp",
+  "./TipA-2.webp",
+
+  "./TipB-1.webp",
+  "./TipB-2.webp",
+  "./TipB-3.webp",
+
+  "./TipC-1.webp",
+  "./TipC-2.webp",
+
+  "./TipD-1.webp",
+  "./TipD-2.webp",
+  "./TipD-3.webp",
+  "./TipD-4.webp",
+
+  "./TipF-1.webp",
+  "./TipF-2.webp",
+  "./TipF-3.webp"
+];
 
 self.addEventListener("install", (event) => {
   self.skipWaiting();
+  event.waitUntil((async () => {
+    const cache = await caches.open(PRECACHE);
+    // ignoreSearch: чтобы "./index.html?v=..." совпадал с "./index.html"
+    await cache.addAll(PRECACHE_URLS);
+  })());
 });
 
 self.addEventListener("activate", (event) => {
@@ -22,31 +58,15 @@ self.addEventListener("activate", (event) => {
   })());
 });
 
-function isHtmlRequest(req, url) {
-  return req.destination === "document" ||
-         req.headers.get("accept")?.includes("text/html") ||
-         url.pathname.endsWith(".html") ||
-         url.pathname === "/" ||
-         url.pathname.endsWith("/Gift-Tower/") ||           // на всякий случай под GH Pages
-         url.pathname.endsWith("/Gift-Tower/index.html");
+function isHTML(req, url){
+  return req.destination === "document" || url.pathname.endsWith(".html") || url.pathname === "/" || url.pathname.endsWith("/Gift-Tower/");
 }
 
-function isAssetRequest(req) {
-  // ассеты/статика
-  return (
-    req.destination === "image" ||
-    req.destination === "script" ||
-    req.destination === "style"  ||
-    req.destination === "font"   ||
-    req.destination === "audio"  ||
-    req.destination === "video"
-  );
-}
-
-async function cachePutSafe(cache, req, res) {
-  // НЕ кешируем ошибки / opaque (opaque бывает при кросс-домене, но у нас origin свой)
-  if (!res || !res.ok || res.type === "opaque") return;
-  await cache.put(req, res.clone());
+function isAsset(req, url){
+  const p = url.pathname.toLowerCase();
+  return req.destination === "image"
+    || p.endsWith(".webp") || p.endsWith(".png") || p.endsWith(".jpg") || p.endsWith(".jpeg")
+    || p.endsWith(".js") || p.endsWith(".css");
 }
 
 self.addEventListener("fetch", (event) => {
@@ -55,57 +75,37 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(req.url);
 
-  // Кешируем только свой origin (GitHub Pages)
+  // кешируем только свой origin (GitHub Pages)
   if (url.origin !== self.location.origin) return;
 
-  // Нормализуем URL для кеша: игнорим query (?_ts=...)
-  const cacheKey = new Request(url.origin + url.pathname, {
-    method: "GET",
-    headers: req.headers,
-    mode: req.mode,
-    credentials: req.credentials,
-    redirect: req.redirect
-  });
-
-  // HTML: stale-while-revalidate
-  if (isHtmlRequest(req, url)) {
+  // ✅ HTML: network-first (чтобы обновления прилетали), fallback cache
+  if (isHTML(req, url)) {
     event.respondWith((async () => {
-      const cache = await caches.open(RUNTIME_CACHE);
-
-      const cached = await cache.match(cacheKey);
-      const networkPromise = (async () => {
-        try {
-          const fresh = await fetch(req, { cache: "no-store" });
-          await cachePutSafe(cache, cacheKey, fresh);
-          return fresh;
-        } catch (e) {
-          return null;
-        }
-      })();
-
-      // Отдаём кеш мгновенно, но обновляем в фоне
-      if (cached) {
-        networkPromise; // фоновое обновление
-        return cached;
+      try {
+        const fresh = await fetch(req);
+        const cache = await caches.open(RUNTIME);
+        cache.put(req, fresh.clone());
+        return fresh;
+      } catch (e) {
+        const cached = await caches.match(req, { ignoreSearch:true });
+        if (cached) return cached;
+        const cachedIndex = await caches.match("./index.html", { ignoreSearch:true });
+        return cachedIndex || new Response("Offline", { status: 503 });
       }
-
-      const fresh = await networkPromise;
-      return fresh || new Response("Offline", { status: 503 });
     })());
     return;
   }
 
-  // Ассеты: cache-first + догрузка
-  if (isAssetRequest(req)) {
+  // ✅ Ассеты: cache-first
+  if (isAsset(req, url)) {
     event.respondWith((async () => {
-      const cache = await caches.open(RUNTIME_CACHE);
-
-      const cached = await cache.match(cacheKey, { ignoreSearch: true });
+      const cached = await caches.match(req, { ignoreSearch:true });
       if (cached) return cached;
 
       try {
         const res = await fetch(req);
-        await cachePutSafe(cache, cacheKey, res);
+        const cache = await caches.open(RUNTIME);
+        cache.put(req, res.clone());
         return res;
       } catch (e) {
         return new Response("", { status: 504 });
@@ -113,15 +113,4 @@ self.addEventListener("fetch", (event) => {
     })());
     return;
   }
-
-  // Остальное (например json) — network-first, но без жёсткого кеша
-  event.respondWith((async () => {
-    try {
-      return await fetch(req);
-    } catch (e) {
-      const cached = await caches.match(cacheKey);
-      return cached || new Response("", { status: 504 });
-    }
-  })());
 });
-
