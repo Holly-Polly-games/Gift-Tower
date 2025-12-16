@@ -336,20 +336,7 @@
 
 <script>
   /* ==========================
-     !!! ВАЖНО: убиваем старый Service Worker
-     ========================== */
-  (function killOldSW(){
-    try{
-      if ('serviceWorker' in navigator){
-        navigator.serviceWorker.getRegistrations()
-          .then(regs => regs.forEach(r => r.unregister()))
-          .catch(()=>{});
-      }
-    }catch(e){}
-  })();
-
-  /* ==========================
-     Leaderboard CONFIG
+     ✅ Leaderboard CONFIG
      ========================== */
   const LB_URL = 'https://script.google.com/macros/s/AKfycbzoUVB7zMI5lHb7ywXXBe1gkEHEo-mMmEJSizJ37aJdIK7yZ24tUUMDaAv3md-z-cyV/exec';
 
@@ -377,8 +364,8 @@
   let canvasW = 0, canvasH = 0;
 
   const CAMERA_SCALE = 0.73;
-
   const BLOCK_HEIGHT = 30;
+
   const PERFECT_TOLERANCE = 8;
   const ANTI_BONUS_CHANCE = 0.10;
 
@@ -388,12 +375,13 @@
   const COIL_W = 128;
   const COIL_H = 120;
 
+  /* ✅ ВАЖНО: под твои файлы TipA-1.webp, TipB-2.webp ... */
   const FLOOR_TYPES = [
-    { id: 'A', label: 'Tip A', filePrefix: 'TipA ', variants: 2, w: 155, h: 121 },
-    { id: 'B', label: 'Tip B', filePrefix: 'TipB ', variants: 3, w: 190, h: 149 },
-    { id: 'C', label: 'Tip C', filePrefix: 'TipC ', variants: 2, w: 116, h: 186 },
-    { id: 'D', label: 'Tip D', filePrefix: 'TipD ', variants: 4, w: 100, h: 100 },
-    { id: 'F', label: 'Tip F', filePrefix: 'TipF ', variants: 3, w: 119, h: 205 }
+    { id: 'A', label: 'Tip A', filePrefix: 'TipA-', variants: 2, w: 155, h: 121 },
+    { id: 'B', label: 'Tip B', filePrefix: 'TipB-', variants: 3, w: 190, h: 149 },
+    { id: 'C', label: 'Tip C', filePrefix: 'TipC-', variants: 2, w: 116, h: 186 },
+    { id: 'D', label: 'Tip D', filePrefix: 'TipD-', variants: 4, w: 100, h: 100 },
+    { id: 'F', label: 'Tip F', filePrefix: 'TipF-', variants: 3, w: 119, h: 205 }
   ];
 
   const FLOOR_IMAGES = {};
@@ -403,6 +391,7 @@
   let backgroundImg = null;
   let bonusImg = null;
   let coilImg = null;
+
   let bagFrontImg = null;
   let bagBackImg  = null;
 
@@ -539,13 +528,6 @@
     return Math.floor(Math.random() * (max - min + 1)) + min;
   }
 
-  function lerp(a, b, t){ return a + (b - a) * t; }
-
-  function lerpDt(a, b, k, dt60){
-    const t = 1 - Math.pow(1 - k, dt60);
-    return a + (b - a) * t;
-  }
-
   function normalizeHexColor(c){
     if (typeof c !== 'string') return '#000000';
     const s = c.trim();
@@ -559,6 +541,13 @@
     if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
     const num = parseInt(hex,16);
     return { r:(num>>16)&255, g:(num>>8)&255, b:num&255 };
+  }
+
+  function lerp(a, b, t){ return a + (b - a) * t; }
+
+  function lerpDt(a, b, k, dt60){
+    const t = 1 - Math.pow(1 - k, dt60);
+    return a + (b - a) * t;
   }
 
   function lerpColor(c1, c2, t){
@@ -792,16 +781,28 @@
   }
 
   /* ==========================
-     ASSET LOADING FIXES:
-     - encodeURI (пробелы)
-     - меньше таймаут, быстрее фейл
-     - логируем точный URL
+     ✅ PRELOAD (быстро + без таймаутов по 9 сек на каждый 404)
      ========================== */
 
-  // ВАЖНО: если у тебя ассеты не рядом с index.html, а в подпапке — поменяй на './assets/'
-  const ASSET_DIR = './';
+  async function canFetchHead(){
+    try{
+      const r = await fetch(location.href, { method:'HEAD', cache:'no-store' });
+      return !!r;
+    }catch(e){
+      return false;
+    }
+  }
 
-  function loadImageOnce(url, timeout=6000){
+  async function headOk(url){
+    try{
+      const r = await fetch(url, { method:'HEAD', cache:'force-cache' });
+      return r.ok;
+    }catch(e){
+      return null; // нельзя — значит пропустим HEAD и пойдём через Image()
+    }
+  }
+
+  function loadImageOnce(url, timeout=8000){
     return new Promise((resolve, reject) => {
       let done=false;
       const img = new Image();
@@ -814,20 +815,20 @@
     });
   }
 
-  async function tryLoadBase(base, opts={timeout:6000, bust:false}){
+  async function tryLoadBase(base, opts={timeout:8000, bust:false, useHead:false}){
     const exts = ['.webp', '.png', '.jpg', '.jpeg'];
     for (const ext of exts){
-      const raw = ASSET_DIR + base + ext;
-      const encoded = encodeURI(raw) + (opts.bust ? `?_ts=${Date.now()}` : '');
+      const url = base + ext + (opts.bust ? `?_ts=${Date.now()}` : '');
+
+      if (opts.useHead){
+        const ok = await headOk(url);
+        if (ok === false) continue; // 404 -> даже не пробуем грузить картинку
+      }
 
       try{
-        const img = await loadImageOnce(encoded, opts.timeout);
-        return { ok:true, img, url: encoded };
-      } catch(e){
-        // логируем только в debug, чтобы понимать что реально запрашивается
-        // (именно этот URL должен открываться в браузере)
-        // console.warn('[asset fail]', encoded, e.message);
-      }
+        const img = await loadImageOnce(url, opts.timeout);
+        return { ok:true, img, url };
+      } catch(e){}
     }
     return { ok:false };
   }
@@ -836,7 +837,7 @@
     const bases = [];
     for (const t of FLOOR_TYPES){
       for (let i=1;i<=t.variants;i++){
-        bases.push(`${t.filePrefix}${i}`);
+        bases.push(`${t.filePrefix}${i}`); // TipA-1, TipB-3...
       }
     }
     bases.push('background','bonus','coil','bag1','bag2');
@@ -848,35 +849,31 @@
     const total = ASSET_BASES.length;
     let loaded = 0;
 
-    const CONCURRENCY = IS_MOBILE ? 6 : 10; // на ПК можно больше
+    const useHead = await canFetchHead();
+
+    const CONCURRENCY = IS_MOBILE ? 4 : 8;
     let idx = 0;
     const results = {};
+    const missing = [];
 
     const workers = new Array(CONCURRENCY).fill(0).map(async ()=>{
       while (idx < total){
         const i = idx++;
         const base = ASSET_BASES[i];
 
-        // 1) обычная попытка
-        let res = await tryLoadBase(base, { timeout: IS_MOBILE ? 6500 : 5000, bust:false });
-
-        // 2) если не вышло — пробуем bust (на случай кеша/Pages)
-        if (!res.ok) res = await tryLoadBase(base, { timeout: IS_MOBILE ? 8000 : 6500, bust:true });
+        let res = await tryLoadBase(base, { timeout:8000, bust:false, useHead });
+        if (!res.ok) res = await tryLoadBase(base, { timeout:8000, bust:true, useHead:false });
 
         results[base] = res.ok ? res.img : null;
+        if (!res.ok) missing.push(base);
 
         loaded++;
         if (onProgress) onProgress(loaded, total, base, !!res.ok);
-
-        if (!res.ok){
-          // это важно: покажем точный путь, который ищем
-          console.error('[MISSING ASSET]', base, 'expected like:', encodeURI(ASSET_DIR + base + '.webp'));
-        }
       }
     });
 
     await Promise.all(workers);
-    return results;
+    return { results, missing };
   }
 
   function assignLoadedAssets(results){
@@ -894,17 +891,6 @@
     coilImg = results['coil'] || null;
     bagFrontImg = results['bag1'] || null;
     bagBackImg  = results['bag2'] || null;
-  }
-
-  function ensureAllAssetsOrThrow(results){
-    const missing = [];
-    for (const base of buildAssetBases()){
-      if (!results[base]) missing.push(base);
-    }
-    if (missing.length){
-      const examples = missing.slice(0, 10).map(b => `- ${encodeURI(ASSET_DIR + b + '.webp')}`).join('\n');
-      throw new Error('Missing assets:\n' + examples + (missing.length>10 ? `\n...and ${missing.length-10} more` : ''));
-    }
   }
 
   function drawBackground(worldHeight){
@@ -929,9 +915,12 @@
   function getBagWorldRect(){
     const w = canvasW * BAG_W_RATIO;
     const h = canvasH * BAG_H_RATIO;
+
     const x = (canvasW - w) / 2 + BAG_OFFSET_X;
+
     const offsetYScaled = (BAG_OFFSET_Y / 600) * canvasH;
     const y = FLOOR_Y - h + offsetYScaled;
+
     return { x, y, w, h };
   }
 
@@ -1057,18 +1046,23 @@
 
   function handlePerfectHit(landed, below){
     comboCount++;
+
     const sparkX = landed.x + landed.w / 2;
     const sparkY = landed.y + landed.h * 0.7;
     spawnSparks(sparkX, sparkY);
 
     if (comboCount >= 2){
       comboFloat = { x: landed.x + landed.w + 10, y: landed.y + landed.h * 0.2, text: 'x' + comboCount, life: 40, maxLife: 40 };
-    } else comboFloat = null;
+    } else {
+      comboFloat = null;
+    }
 
     swayAmplitude *= 0.7;
     speedGrowth = Math.max(MIN_SPEED_GROWTH, speedGrowth * 0.85);
 
-    if (comboCount > 0 && comboCount % 5 === 0) pendingBonus = true;
+    if (comboCount > 0 && comboCount % 5 === 0){
+      pendingBonus = true;
+    }
   }
 
   function handleNormalHit(){
@@ -1443,17 +1437,12 @@
 
   function trySubmitScore(){
     try{
-      const t0 = performance.now();
       submitScoreJSONP({
         username: getTgUsername() || 'Игрок',
         score: score,
         tg_id: getTgId() || ''
-      })
-      .then(res => console.log('submitScoreJSONP OK', res, 'ms=', Math.round(performance.now()-t0)))
-      .catch(err => console.warn('submitScoreJSONP ERR', err, 'ms=', Math.round(performance.now()-t0)));
-    }catch(e){
-      console.warn('submit failed sync', e);
-    }
+      }).catch(()=>{});
+    }catch(e){}
   }
 
   async function openLeaderboard(){
@@ -1479,7 +1468,6 @@
       }
     }catch(e){
       lbList.innerHTML = '<li style="padding:8px;color:#a00">Не удалось загрузить таблицу лидеров.</li>';
-      console.warn(e);
     }finally{
       lbLoading.style.display = 'none';
     }
@@ -1496,14 +1484,23 @@
     updateLoaderProgress(0, 100);
 
     try{
-      const results = await preloadAllAssets((loaded, total)=>{
+      const { results, missing } = await preloadAllAssets((loaded, total)=>{
         updateLoaderProgress(loaded, total);
       });
 
-      // если хоть что-то не подгрузилось — валим с понятной ошибкой
-      ensureAllAssetsOrThrow(results);
-
       assignLoadedAssets(results);
+
+      // ✅ если вообще не загрузились типы блоков — показываем понятную ошибку
+      const essentialMissing = missing.filter(b => b.startsWith('Tip'));
+      if (essentialMissing.length){
+        alert(
+          'Не найдены ассеты (404). Проверь, что файлы лежат рядом с index.html (корень GitHub Pages) и имена совпадают 1в1:\n\n' +
+          essentialMissing.slice(0, 20).map(x => `- ${x}.webp`).join('\n') +
+          (essentialMissing.length > 20 ? '\n\n...и ещё ' + (essentialMissing.length - 20) + ' шт.' : '') +
+          '\n\nВажно: регистр/дефисы/пробелы должны совпадать.'
+        );
+      }
+
       warmLb();
 
       loaderOverlay.style.display = 'none';
@@ -1512,15 +1509,7 @@
       resetGame();
     }catch(err){
       console.error('Preload failed', err);
-
-      alert(
-        'Не найдены ассеты (404) ИЛИ они не попали в деплой GitHub Pages.\n\n' +
-        '1) Открой на домене Pages: ' + encodeURI(location.origin + location.pathname.replace(/\/[^\/]*$/, '/') + 'TipA 1.webp') + '\n' +
-        'Если 404 — Pages деплоит не ту папку.\n\n' +
-        '2) Если файл открывается, но игра говорит 404 — виноват Service Worker/кеш.\n' +
-        'Открой страницу в браузере → очисти данные сайта или переоткрой после обновления.\n\n' +
-        'Тех.детали в консоли (F12).'
-      );
+      alert('Ошибка загрузки ассетов. Проверь, что файлы реально лежат рядом с index.html и названия совпадают.');
     }
   }
 
@@ -1528,3 +1517,4 @@
 </script>
 </body>
 </html>
+
